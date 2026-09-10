@@ -1,0 +1,103 @@
+name: Build sysu-sam Image
+
+# 先进智造学堂自建镜像。上游的 build-community.yaml / release.yaml 只认 prod/dev/main
+# 分支与纯数字 tag，都不会在本分支触发，所以单独一个 workflow。
+#
+# 与上游的差异及原因：
+#   - 只出 linux/amd64：NAS 是 x86_64，arm64 用不上，省一半构建时长
+#   - 因此不需要 push-by-digest + 单独的 manifest merge 作业，直接 tag 推出去
+#   - build-arg LEARNHOUSE_PUBLIC=true：与上游 release 一致（Dockerfile 第 97 行，
+#     true 时 rm -rf /app/api/ee），线上跑的 1.3.6 就是这么建的
+#   - paths-ignore 沿用上游的 deny-list 思路：镜像里只有 apps/web、apps/collab、apps/api，
+#     改文档或 deploy/ 不该触发构建
+
+on:
+  push:
+    branches:
+      - sysu-sam
+    tags:
+      - 'sysu-v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'deploy/**'
+      - 'apps/cli/**'
+      - 'apps/e2e/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: godarrenw/learnhouse
+
+jobs:
+  build:
+    name: Build and push (linux/amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          REF="${{ github.ref_name }}"
+          # 分支/标签名可能含 /，docker tag 不允许，统一换成 -
+          SAFE_REF=$(echo "$REF" | tr '/' '-')
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "tags=${IMG}:${SAFE_REF},${IMG}:${SAFE_REF}-${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "primary=${IMG}:${SAFE_REF}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            LEARNHOUSE_PUBLIC=true
+          cache-from: type=gha,scope=sysu-sam-amd64
+          cache-to: type=gha,mode=max,scope=sysu-sam-amd64
+
+      - name: Inspect pushed image
+        # 首次推上去的 ghcr 包默认是 private，本机没有 read:packages scope 的 token
+        # 就 inspect 不了。这里用 GITHUB_TOKEN 在 runner 里查一次，结果留在 run log 里，
+        # 用 gh run view --log 就能取证。
+        run: |
+          echo "digest: ${{ steps.build.outputs.digest }}"
+          docker buildx imagetools inspect "${{ steps.meta.outputs.primary }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### 镜像已推送"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n'
+            echo '```'
+            echo ""
+            echo "digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> $GITHUB_STEP_SUMMARY
