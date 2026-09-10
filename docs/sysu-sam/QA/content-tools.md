@@ -19,11 +19,11 @@ uv run --no-sync ruff check src/services/ext src/routers/ext src/tests/ext
 
 | 项 | 结果 |
 |---|---|
-| pytest（`src/tests/ext` 全量，含骨架的 12 条） | 92 passed |
+| pytest（`src/tests/ext` 全量，含骨架与学情的用例） | 134 passed |
 | ruff | All checks passed |
 
-本分支贡献 80 条：73 条纯逻辑（不碰库不碰网），7 条用 conftest 的内存 SQLite
-真跑 service 调用。
+本分支贡献 86 条：73 条纯逻辑（不碰库不碰网），13 条用 conftest 的内存 SQLite
+真跑 service 调用（导入导出往返 7 条、虚拟助教追加 6 条）。
 
 **环境坑（其他代理也会踩）**：`uv sync` 装不上 `greenlet`，但 SQLAlchemy 的
 async 引擎必须要它，缺了所有碰数据库的测试都报
@@ -121,7 +121,11 @@ E2E_STUDENT_EMAIL=user2@example.local E2E_STUDENT_PASSWORD='…' \
 bun run test features/ext --workers=1
 ```
 
-**11 passed**（骨架 6 条 + 内容工具 5 条）。截图在 `docs/sysu-sam/QA/content/`。
+`--workers=1` 不是必须，但并行跑的时候几个用例会抢同一门课的数据，
+串行更容易复现问题。
+
+**14 passed**（骨架 6 条 + 学情 3 条 + 内容工具 5 条）。rebase 到最新 sysu-sam
+之后重跑过一遍，学情那三条没被影响。截图在 `docs/sysu-sam/QA/content/`。
 
 | 用例 | 验到了什么 | 截图 |
 |---|---|---|
