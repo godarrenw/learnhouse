@@ -13,7 +13,7 @@
  * 详见 `docs/sysu-sam/EXT_TOOLS.md`。
  */
 import { lazy } from 'react'
-import { Activity, LayoutGrid } from 'lucide-react'
+import { Activity, LayoutGrid, UserCheck } from 'lucide-react'
 
 import type { SysuTool, SysuToolRole } from './types'
 
@@ -35,6 +35,15 @@ export const SYSU_TOOLS: SysuTool[] = [
     icon: Activity,
     component: lazy(() => import('./tools/Example/ExampleTool')),
     minRole: 'instructor',
+  },
+  {
+    key: 'checkin',
+    titleKey: 'ext.tools.checkin.title',
+    descKey: 'ext.tools.checkin.description',
+    icon: UserCheck,
+    component: lazy(() => import('./tools/checkin/CheckinTool')),
+    minRole: 'instructor',
+    courseScoped: true,
   },
 ]
 

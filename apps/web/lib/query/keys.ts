@@ -106,6 +106,15 @@ export const queryKeys = {
     analytics: () => ['superadmin', 'analytics'] as const,
     apiTokens: () => ['superadmin', 'apiTokens'] as const,
   },
+  /* --- SYSU-SAM: 上课签到 --- */
+  checkin: {
+    sessions: (courseUuid: string) => ['checkin', courseUuid, 'sessions'] as const,
+    live: (sessionUuid: string) => ['checkin', sessionUuid, 'live'] as const,
+    records: (sessionUuid: string) => ['checkin', sessionUuid, 'records'] as const,
+    publicSession: (sessionUuid: string) => ['checkin', sessionUuid, 'public'] as const,
+    openForCourse: (courseUuid: string) => ['checkin', courseUuid, 'open'] as const,
+  },
+  /* --- /SYSU-SAM --- */
   payments: {
     configs: (orgId: number) => ['payments', orgId, 'configs'] as const,
     offers: (orgId: number) => ['payments', orgId, 'offers'] as const,

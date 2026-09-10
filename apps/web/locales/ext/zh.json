@@ -17,6 +17,10 @@
     "example": {
       "description": "验证教学工具扩展点是否连通",
       "keywords": "示例,自检,health,example"
+    },
+    "checkin": {
+      "description": "开一场课堂签到，投屏二维码与口令",
+      "keywords": "签到,点名,考勤,checkin,attendance,二维码"
     }
   },
   "common": {
@@ -59,6 +63,92 @@
       "role": "组织内角色",
       "tools": "已挂载的工具",
       "role_unknown": "超级管理员（不属于本组织）"
+    },
+    "checkin": {
+      "title": "上课签到",
+      "description": "开一场签到，投屏出二维码与口令，学生扫码或输口令即可",
+      "status": {
+        "open": "进行中",
+        "closed": "已结束"
+      },
+      "method": {
+        "qr": "扫码",
+        "code": "口令"
+      },
+      "banner": {
+        "title": "本节课签到"
+      },
+      "tool": {
+        "course": "课程",
+        "no_courses": "暂无课程",
+        "pick_course": "先选择一门课程",
+        "title_label": "本次标题",
+        "default_title": "第 {{n}} 次课",
+        "refresh_label": "刷新间隔 {{n}} 秒",
+        "start": "开始签到",
+        "starting": "正在开启签到…",
+        "started": "签到已开启",
+        "start_error": "开启失败",
+        "present": "投屏",
+        "export": "导出",
+        "exporting": "正在导出…",
+        "exported": "已导出 CSV",
+        "export_error": "导出失败",
+        "close": "结束",
+        "closing": "正在结束…",
+        "closed": "已结束",
+        "close_error": "结束失败",
+        "close_title": "结束这场签到？",
+        "close_confirm": "结束后学生无法再签到，记录仍会保留。",
+        "empty": "这门课还没有签到记录",
+        "table": {
+          "title": "场次",
+          "status": "状态",
+          "count": "已签到",
+          "started": "开始时间",
+          "actions": "操作"
+        }
+      },
+      "present": {
+        "title": "课堂签到",
+        "code_label": "口令",
+        "checked": "人已签到",
+        "no_one_yet": "还没有人签到",
+        "hint": "用手机扫码，或在课程页输入口令签到",
+        "close": "结束签到",
+        "closing": "正在结束…",
+        "closed": "签到已结束",
+        "close_error": "结束失败",
+        "close_title": "结束本次签到？",
+        "close_confirm": "结束后学生无法再签到，记录仍会保留。",
+        "session_closed": "本次签到已结束",
+        "load_error": "加载失败，请刷新页面"
+      },
+      "student": {
+        "login_needed": "请先登录再签到",
+        "login_hint": "签到会绑定到你的账号，登录后会自动回到这个页面。",
+        "login": "去登录",
+        "confirm": "确认签到",
+        "submitting": "正在签到…",
+        "code_label": "或输入屏幕上的口令",
+        "submit_code": "签到",
+        "back_to_course": "回到课程",
+        "check_link": "二维码可能已经失效，请向老师确认。"
+      },
+      "result": {
+        "ok": "签到成功",
+        "already": "你已经签过到了",
+        "closed": "本次签到已结束"
+      },
+      "error": {
+        "already_checked_in": "你已经签过到了。",
+        "invalid_or_expired_code": "口令已经过期或不正确，看一眼屏幕上的最新口令再试。",
+        "session_closed": "本次签到已经结束。",
+        "session_not_found": "找不到这场签到",
+        "not_org_member": "你不在这个组织里，无法签到。",
+        "rate_limited": "提交太频繁，等一秒再试。",
+        "unknown": "签到失败，请重试。"
+      }
     }
   }
 }

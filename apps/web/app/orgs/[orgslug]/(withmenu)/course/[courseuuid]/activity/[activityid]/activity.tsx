@@ -37,6 +37,9 @@ import { Breadcrumbs } from '@components/Objects/Breadcrumbs/Breadcrumbs'
 import { BookCopy } from 'lucide-react'
 import MiniInfoTooltip from '@components/Objects/MiniInfoTooltip'
 import GeneralWrapperStyled from '@components/Objects/StyledElements/Wrappers/GeneralWrapper'
+/* --- SYSU-SAM: 上课签到入口 --- */
+import CheckinBanner from '@components/SysuCheckin/CheckinBanner'
+/* --- /SYSU-SAM --- */
 import ActivityIndicators from '@components/Pages/Courses/ActivityIndicators'
 import UserAvatar from '@components/Objects/UserAvatar'
 import { useTranslation } from 'react-i18next'
@@ -783,6 +786,10 @@ function ActivityClient(props: ActivityClientProps) {
               </AnimatePresence>
             ) : (
               <GeneralWrapperStyled>
+                {/* --- SYSU-SAM: 上课签到入口。只挂在普通模式：专注模式是 fixed inset-0
+                    的独立布局，插入横条会打乱它的排版，学生仍可从课程页或扫码进入 --- */}
+                <CheckinBanner orgslug={orgslug} courseUuid={course?.course_uuid} />
+                {/* --- /SYSU-SAM --- */}
                 {/* Original non-focus mode UI */}
                 {activityid === 'end' ? (
                   <CourseEndView 
