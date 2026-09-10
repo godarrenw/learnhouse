@@ -179,68 +179,77 @@ $ bunx eslint --max-warnings 0 components/SysuTools components/SysuCheckin \
 
 两个被改动的上游文件（`course.tsx`、`activity.tsx`）改动前后都是 0 error。
 
-**`bun run lint:strict` 整体仍然失败**，报 35 个 error。逐条看下来全部落在既有的
-上游文件里（admin/embed 的 layout 缺 React 引用、analytics 图表组件的
-"Cannot create components during render"、PasswordStrengthIndicator 的正则转义等），
-本分支新增或改动的文件一条也没有。**没有测过 sysu-sam 基线上的具体数字**，
-所以这里只说「全部在上游文件里、本分支贡献 0 条」，不说「计数不变」。
+`bun run lint:strict` 整体报 **35 个 error**，与 team-lead 给出的 sysu-sam 基线数
+一致，即**没有新增**。逐条看下来全部落在既有的上游文件里（admin/embed 的 layout
+缺 React 引用、analytics 图表组件的 "Cannot create components during render"、
+PasswordStrengthIndicator 的正则转义等），本分支新增或改动的文件一条也没有。
 
-### Playwright 端到端（本地预发栈）
+### Playwright 端到端
 
-`apps/web/tests/ext/checkin.spec.ts`，**8 条全过**（rebase 到骨架之后重跑，18.9s）：
+用例在 **`apps/e2e/features/ext/tests/02-checkin.spec.ts`**（复用 `apps/e2e` 已有的
+Playwright 工程：`core/fixtures` 抑制首屏引导弹窗、`core/sharedAuth` 复用管理员与
+普通成员的会话，整轮只花几次登录，不会撞上 30 次 / 5 分钟 / IP 的登录限流）。
+API 种子与读回封装在同目录的 `checkin.ts`。
 
-| # | 用例 | 截图 |
+**连同骨架自己的 6 条，`features/ext` 15 条全过**：
+
+| 用例 | 证明了什么 | 截图 |
 |---|---|---|
-| 1 | 老师开一场签到，投屏页出二维码与六位口令 | `01-tool-form.png`、`02-present.png` |
-| 2 | 学生扫码路径签到成功 | `03-student-qr-ok.png` |
-| 3 | 同一个学生再签一次被拒 | `04-student-duplicate.png` |
-| 4 | 口令路径签到成功 | `05-student-code-ok.png` |
-| 5 | 老师端名单出现签到者，关闭，CSV 能导出 | `06-present-with-records.png`、`07-tool-after-close.png` |
-| 6 | 课程页顶部出现「本节课签到」入口条 | `09-course-banner.png` |
-| 7 | 未登录扫码 → 登录 → 回跳并自动签到（`?t=` 原样保留） | `10-anon-login-prompt.png`、`11-anon-after-login-ok.png` |
-| 8 | 关闭之后的会话拒绝签到（410 `session_closed`） | `08-student-after-close.png` |
+| 老师开一场签到，投屏页出二维码与六位口令 | 工具页能开会话并跳投屏；二维码是内联 SVG；口令是 6 位数字，且与服务端 `/live` 同一窗口派生 | `01-tool-form.png`、`02-present.png` |
+| 扫码路径签到成功 | 带 token 打开落地页即自动签到成功 | `03-student-qr-ok.png` |
+| 同一个账号再签一次落在「已经签过」 | 一场一账号一次 | `04-student-duplicate.png` |
+| 名单里出现这个学生，CSV 能导出 | 人数不为 0；CSV 带 BOM、表头、该学生邮箱、方式 qr | — |
+| 输口令也能签到 | 口令路径独立可用，人数增加到 2 | `05-student-code-ok.png` |
+| 结束之后再提交拿 410 `session_closed` | 状态判定先于「是否已签过」 | — |
+| 结束后的投屏页不再显示二维码与口令 | 关闭后不再发码 | `06-present-after-close.png` |
+| 课程页顶部出现入口条，点进去是这场签到 | 学生端挂点生效 | `07-course-banner.png`、`08-student-form.png` |
+| 未登录扫码 → 登录 → 回跳并自动签到 | `?next=` 原样带着 `?t=`，登录回来自动提交 | `09-anon-login-prompt.png`、`10-anon-after-login-ok.png` |
 
-CSV 实际内容（本地栈，两条记录，两种方式）：
+截图由用例自己写进 `docs/sysu-sam/QA/checkin/`，跑一遍就会刷新。
 
-```
-课程,场次,姓名,邮箱,签到时间,方式,IP
-电脑维修从入门到精通,端到端验证课,admin admin,user1@example.local,2026-09-10 22:20:23,code,127.0.0.1
-电脑维修从入门到精通,端到端验证课,签到 测试同学,checkin-student@example.local,2026-09-10 22:20:15,qr,127.0.0.1
-```
+CSV 的 BOM 断言走原始字节，不看正文开头——`Response.text()` 按规范会把前导 BOM
+吃掉，用文本判断会永远失败（第一次就是这么挂的）。
 
-**跑测试要先搭的环境**（本地栈的 Postgres/Redis 没有映射到宿主机端口）：
+**怎么跑**（本地栈的 Postgres/Redis 没有映射到宿主机端口，socat 转发容器
+`lh-db-fwd-15432`、`lh-redis-fwd-16379` 由骨架代理起好，共用）：
 
 ```sh
-# 1. 把本地栈的库和 redis 转出来
-docker run -d --name lh-db-fwd-15432 --network learnhouse-local_learnhouse-network-local \
-  -p 15432:5432 alpine/socat tcp-listen:5432,fork,reuseaddr tcp-connect:learnhouse-db-local:5432
-docker run -d --name lh-redis-fwd-16379 --network learnhouse-local_learnhouse-network-local \
-  -p 16379:6379 alpine/socat tcp-listen:6379,fork,reuseaddr tcp-connect:learnhouse-redis-local:6379
-
-# 2. 建表（本地栈的库没有 alembic_version，先 stamp 再 upgrade）
+# 1. 建表（本地栈的库没有 alembic_version，先 stamp 再 upgrade）
 cd apps/api
 export LEARNHOUSE_SQL_CONNECTION_STRING=postgresql://learnhouse:learnhouse@127.0.0.1:15432/learnhouse
-uv run alembic stamp b1c2d3e4f5a6 && uv run alembic upgrade head
-# 验完记得 stamp 回去：本地栈的库是几个功能分支共用的，把 alembic_version 停在
-# sam1checkin01 会让还没合入本分支的人跑 upgrade head 时报 Can't locate revision。
-# 表本身留着不影响任何人（迁移和 create_all 都会跳过已存在的表）。
-uv run alembic stamp b1c2d3e4f5a6
+uv run --no-sync alembic stamp b1c2d3e4f5a6 && uv run --no-sync alembic upgrade head
+# 验完 stamp 回去：本地库是几个功能分支共用的，停在 sam1checkin01 会让还没合入
+# 本分支的人跑 upgrade head 报 Can't locate revision。表留着无害。
+uv run --no-sync alembic stamp b1c2d3e4f5a6
 
-# 3. 起后端与前端（端口按并行约定错开）
-uv run uvicorn app:app --port 9004
+# 2. 起后端与前端（端口自行错开，签到用 9004 / 3004）
+uv run --no-sync uvicorn app:app --port 9004
 cd ../web && bun run dev --port 3004
 
-# 4. 跑 e2e（仓库里没装 Playwright，见下）
-bunx playwright test -c tests/ext/playwright.config.ts
+# 3. 跑 e2e
+cd ../e2e && bun install && bun run install-browsers
+E2E_SKIP_BOOT=1 \
+E2E_BASE_URL=http://localhost:3004 \
+E2E_API_URL=http://localhost:9004/api/v1 \
+E2E_ADMIN_EMAIL=user1@example.local E2E_ADMIN_PASSWORD='LocalDev#2026' \
+E2E_STUDENT_EMAIL=user2@example.local E2E_STUDENT_PASSWORD='LocalDev#2026' \
+bunx playwright test features/ext
 ```
 
-学生账号是本次新建的 `checkin-student@example.local / Student#2026`（角色 User），
-教师用本地栈自带的管理员 `user1@example.local`。
+学生用本地库自带的 `user2@example.local`（User 角色），不新建账号——这套库开了
+「需要邀请码才能加入」，`createStudent` 会被 403 顶回来。
 
-**仓库里没有 Playwright**：上游 `apps/web/tests` 全是 `bun test` 的纯逻辑单测，
-`package.json` 里没有 `@playwright/test`。本次是在会话临时目录里装了
-`@playwright/test@1.56.1` 并软链进 `apps/web/node_modules` 跑的。要进 CI，
-集成时得把它加进 devDependencies。
+### 类型检查
+
+两个工程都 exit 0：
+
+```
+$ cd apps/web && bunx tsc --noEmit -p .      → 0
+$ cd apps/e2e && bun run typecheck           → 0
+```
+
+`tsc` 这一关抓到两个 eslint 没抓到的真错：`outcome` 联合类型没窄化就读 `code`，
+以及 `courseUuid` 可能是 `undefined`。
 
 ## 七、已知限制与待办
 
