@@ -71,9 +71,24 @@ def _content_delivery() -> str:
         return "unknown"
 
 
+# 媒体根目录。和上游 `services/utils/upload_content.py` 一样是相对当前工作目录的
+# `content/`（容器里是 /app/api/content）。
+CONTENT_ROOT = "content"
+
+
+def _media_root_available() -> bool:
+    """媒体根目录里到底有没有 orgs/ 这一层。
+
+    没有的话说明整棵内容树不可达（从源码起服务、或者只恢复了数据库没恢复媒体），
+    此时逐张图去 os.path.exists 会把每一张都判成「不存在」，刷出一屏假 error。
+    这种情况只报一条 info，说明检查被跳过了。
+    """
+    return os.path.isdir(os.path.join(CONTENT_ROOT, "orgs"))
+
+
 def _image_on_disk(org_uuid, course_uuid, activity_uuid, block_uuid, file_id, file_format) -> bool:
     path = os.path.join(
-        "content",
+        CONTENT_ROOT,
         "orgs",
         str(org_uuid),
         "courses",
@@ -145,6 +160,7 @@ async def lint_course(db_session: AsyncSession, course) -> dict:
     blocks = {b.block_uuid: b for b in block_rows.scalars().all()}
 
     delivery = _content_delivery()
+    media_root_ok = _media_root_available()
     today = datetime.now().strftime("%Y-%m-%d")
 
     findings: list[dict] = []
@@ -253,7 +269,7 @@ async def lint_course(db_session: AsyncSession, course) -> dict:
                                 )
                             )
                             errors += 1
-                        elif delivery == "filesystem":
+                        elif delivery == "filesystem" and media_root_ok:
                             if not _image_on_disk(
                                 org_uuid,
                                 course.course_uuid,
@@ -282,8 +298,13 @@ async def lint_course(db_session: AsyncSession, course) -> dict:
                                 _finding(
                                     "info",
                                     "image_uncertain",
-                                    "「%s」里的图片存在对象存储（%s）上，体检没法就地确认它还在不在"
-                                    % (where, delivery),
+                                    "「%s」里的图片没法就地确认还在不在（%s）"
+                                    % (
+                                        where,
+                                        "媒体目录不可达"
+                                        if delivery == "filesystem"
+                                        else "内容存在对象存储 %s 上" % delivery,
+                                    ),
                                     target_uuid=activity.activity_uuid,
                                     target_type="activity",
                                     fix_hint="打开这一页目视确认一下图片能显示。",

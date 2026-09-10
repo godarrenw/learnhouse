@@ -144,10 +144,29 @@ async def rbac_check_course(
 # ---------------------------------------------------------------- 名单
 
 
+# 中日韩统一表意文字。判断姓名要不要中间那个空格用它。
+_CJK_RANGES = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0x2A6DF))
+
+
+def _is_cjk(text: str) -> bool:
+    return bool(text) and all(
+        any(low <= ord(ch) <= high for low, high in _CJK_RANGES) for ch in text
+    )
+
+
 def display_name(user: User) -> str:
-    """姓名优先，没有就退回用户名。"""
-    full = " ".join(x for x in [user.first_name or "", user.last_name or ""] if x).strip()
-    return full or user.username
+    """姓名优先，没有就退回用户名。
+
+    中文姓名不加中间的空格（「张小明」而不是「张 小明」），
+    西文姓名照常用空格分隔。
+    """
+    first = (user.first_name or "").strip()
+    last = (user.last_name or "").strip()
+    parts = [p for p in (first, last) if p]
+    if not parts:
+        return user.username
+    separator = "" if all(_is_cjk(p) for p in parts) else " "
+    return separator.join(parts)
 
 
 async def linked_usergroups(

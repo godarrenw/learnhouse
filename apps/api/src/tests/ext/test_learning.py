@@ -408,6 +408,23 @@ async def test_recent_is_org_scoped(db, other_org, trail_data):
     assert "没有任何学习记录" in data["note"]
 
 
+def test_display_name_skips_space_between_cjk_parts():
+    """中文姓名不该被拼成「张 小明」。"""
+    from src.db.users import User as UserModel
+    from src.services.ext.learning.common import display_name
+
+    def make(first, last, username="u"):
+        return UserModel(
+            username=username, first_name=first, last_name=last,
+            email="x@example.com", password="x", user_uuid="u",
+            creation_date=NOW, update_date=NOW,
+        )
+
+    assert display_name(make("张", "小明")) == "张小明"
+    assert display_name(make("Ada", "Lovelace")) == "Ada Lovelace"
+    assert display_name(make("", "", username="fallback")) == "fallback"
+
+
 def test_to_iso_converts_utc_to_display_timezone():
     assert to_iso("2026-09-08 11:30:31.402905").startswith("2026-09-08T19:30:31")
     assert to_iso("") is None
