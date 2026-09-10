@@ -118,11 +118,12 @@ async def draft_from_activity(
         raise SpecError("题量必须是整数")
     n = max(1, min(20, n))
 
-    cfg = llm_mod.llm_config()
+    cfg = llm_mod.require_configured(await llm_mod.llm_config(db_session, course.org_id))
     model = (model or cfg["model"] or "").strip()
     if not model:
         raise llm_mod.LLMNotConfiguredError(
-            "没有指定模型。请在请求里传 model，或设置环境变量 LEARNHOUSE_EXT_LLM_MODEL。"
+            "没有指定模型。请在请求里传 model，或在组织设置的 ext 段填 llm_model / "
+            "设置环境变量 LEARNHOUSE_EXT_LLM_MODEL。"
         )
 
     prompt = PROMPT.format(
@@ -141,7 +142,7 @@ async def draft_from_activity(
     last_err = None
     while attempts < 2 and spec is None:
         attempts += 1
-        raw = await llm_mod.chat_completion(model, messages)
+        raw = await llm_mod.chat_completion(cfg, model, messages)
         try:
             spec = llm_mod.extract_json(raw)
         except (ValueError, TypeError) as e:

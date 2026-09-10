@@ -363,6 +363,18 @@ async def _submit(db, assignment, task, user_id, payload, sid):
 # AI 出题
 # ---------------------------------------------------------------------------
 
+@pytest.fixture
+def llm_configured(monkeypatch):
+    """给 AI 出题的用例配一个端点。
+
+    不这么做就会依赖开发机上 apps/api/.env 里恰好有没有 LEARNHOUSE_EXT_LLM_*，
+    CI 上没有那个文件，用例会在「没配端点」上失败。这里显式设死，
+    组织配置那一层由 `test_org_config_overrides_env` 单独覆盖。
+    """
+    monkeypatch.setenv("LEARNHOUSE_EXT_LLM_BASE_URL", "https://llm.test/v1")
+    monkeypatch.setenv("LEARNHOUSE_EXT_LLM_API_KEY", "test-key")
+    monkeypatch.delenv("LEARNHOUSE_EXT_LLM_MODEL", raising=False)
+
 _LLM_REPLY = """```json
 {"name": "AI 出的题", "publish": true, "tasks": [
   {"kind": "quiz", "questions": [{"text": "CNC 的 C 指什么？", "options": [
@@ -373,7 +385,7 @@ _LLM_REPLY = """```json
 
 async def test_draft_forces_draft_and_validates(
     db, org, course, chapter, page_activity, admin_user, mock_request,
-    bypass_ext_rbac,
+    bypass_ext_rbac, llm_configured,
 ):
     with patch.object(llm_mod, "chat_completion", new=AsyncMock(return_value=_LLM_REPLY)):
         with patch.object(draft_svc.llm_mod, "chat_completion",
@@ -390,7 +402,7 @@ async def test_draft_forces_draft_and_validates(
 
 async def test_draft_reports_extra_kinds(
     db, org, course, chapter, page_activity, admin_user, mock_request,
-    bypass_ext_rbac,
+    bypass_ext_rbac, llm_configured,
 ):
     reply = (
         '{"name": "x", "tasks": ['
@@ -409,7 +421,7 @@ async def test_draft_reports_extra_kinds(
 
 async def test_draft_normalizes_invented_enum_values(
     db, org, course, chapter, page_activity, admin_user, mock_request,
-    bypass_ext_rbac,
+    bypass_ext_rbac, llm_configured,
 ):
     """模型真的会自己发明枚举值 —— 线上实测两次都把 grading_type 填成 MIXED。
 
@@ -437,7 +449,7 @@ async def test_draft_normalizes_invented_enum_values(
 
 async def test_draft_retries_once_then_gives_up(
     db, org, course, chapter, page_activity, admin_user, mock_request,
-    bypass_ext_rbac,
+    bypass_ext_rbac, llm_configured,
 ):
     chat = AsyncMock(return_value="模型今天不想输出 JSON")
     with patch.object(draft_svc.llm_mod, "chat_completion", new=chat):
@@ -452,6 +464,7 @@ async def test_draft_retries_once_then_gives_up(
 
 async def test_draft_refuses_short_page(
     db, org, course, chapter, activity, admin_user, mock_request, bypass_ext_rbac,
+    llm_configured,
 ):
     """conftest 的 activity 正文是空的，出不了题。"""
     with pytest.raises(SpecError) as e:
@@ -464,7 +477,7 @@ async def test_draft_refuses_short_page(
 
 async def test_draft_rejects_activity_from_another_course(
     db, org, other_org, course, chapter, page_activity, admin_user, mock_request,
-    bypass_ext_rbac,
+    bypass_ext_rbac, llm_configured,
 ):
     stray = Activity(
         id=77, name="别的课的页", activity_type=ActivityTypeEnum.TYPE_DYNAMIC,
@@ -484,14 +497,53 @@ async def test_draft_rejects_activity_from_another_course(
 
 async def test_draft_without_model_is_503(
     db, org, course, chapter, page_activity, admin_user, mock_request, bypass_ext_rbac,
-    monkeypatch,
+    llm_configured,
 ):
-    monkeypatch.delenv("LEARNHOUSE_EXT_LLM_MODEL", raising=False)
+    """配了端点但没配默认模型，且请求里也没传 —— 该报「没配置」而不是瞎调。"""
     with pytest.raises(llm_mod.LLMNotConfiguredError):
         await draft_svc.draft_from_activity(
             mock_request, course.course_uuid, page_activity.activity_uuid,
             admin_user, db,
         )
+
+
+async def test_draft_without_endpoint_is_503(
+    db, org, course, chapter, page_activity, admin_user, mock_request, bypass_ext_rbac,
+    monkeypatch,
+):
+    monkeypatch.delenv("LEARNHOUSE_EXT_LLM_BASE_URL", raising=False)
+    with pytest.raises(llm_mod.LLMNotConfiguredError):
+        await draft_svc.draft_from_activity(
+            mock_request, course.course_uuid, page_activity.activity_uuid,
+            admin_user, db, model="m",
+        )
+
+
+async def test_org_config_overrides_env(db, org, monkeypatch):
+    """组织配置的 ext 段要能盖过环境变量 —— 同一台机器上可能跑多个组织。"""
+    from datetime import datetime as _dt
+
+    from src.db.organization_config import OrganizationConfig
+    from src.services.ext.assign_tools import llm as llm_module
+
+    monkeypatch.setenv("LEARNHOUSE_EXT_LLM_BASE_URL", "https://from-env/v1")
+    monkeypatch.setenv("LEARNHOUSE_EXT_LLM_MODEL", "env-model")
+
+    from_env = await llm_module.llm_config(db, org.id)
+    assert from_env["base"] == "https://from-env/v1"
+    assert from_env["model"] == "env-model"
+
+    db.add(OrganizationConfig(
+        org_id=org.id,
+        config={"ext": {"llm_base_url": "https://from-org/v1/", "llm_model": "org-model"}},
+        creation_date=str(_dt.now()),
+        update_date=str(_dt.now()),
+    ))
+    await db.commit()
+
+    from_org = await llm_module.llm_config(db, org.id)
+    assert from_org["base"] == "https://from-org/v1"   # 末尾的斜杠会被去掉
+    assert from_org["model"] == "org-model"
 
 
 # ---------------------------------------------------------------------------

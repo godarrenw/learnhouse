@@ -24,7 +24,11 @@ from src.services.ext.assign_tools import similarity as sim_svc
 from src.services.ext.assign_tools import versions as ver_svc
 from src.routers.ext.deps import require_teacher
 from src.services.ext.assign_tools.create import create_from_spec
-from src.services.ext.assign_tools.llm import LLMNotConfiguredError, list_models
+from src.services.ext.assign_tools.llm import (
+    LLMNotConfiguredError,
+    list_models,
+    llm_config,
+)
 from src.services.ext.assign_tools.spec import SpecError, spec_template, validate_spec
 
 router = APIRouter()
@@ -146,10 +150,12 @@ async def api_spec_template(
 )
 async def api_list_models(
     *,
+    org_id: int,
     current_user: PublicUser = Depends(require_teacher),
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> Any:
     try:
-        return await list_models()
+        return await list_models(await llm_config(db_session, org_id))
     except SpecError as e:
         raise _translate(e)
 

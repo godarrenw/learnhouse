@@ -12,6 +12,7 @@ import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 
 import { useLHSession } from '@components/Contexts/LHSessionContext'
+import { useOrg } from '@components/Contexts/OrgContext'
 import {
   createFromSpec,
   draftFromActivity,
@@ -42,6 +43,8 @@ export default function AiQuizTab({ courseUuid }: { courseUuid?: string }) {
   const { t } = useTranslation()
   const session = useLHSession() as any
   const access_token = session?.data?.tokens?.access_token
+  const org = useOrg() as any
+  const orgId: number = org?.id ?? 0
 
   const { chapters, pages, isFetching: treeLoading, data: treeData } = useCourseTree(courseUuid)
 
@@ -59,9 +62,9 @@ export default function AiQuizTab({ courseUuid }: { courseUuid?: string }) {
   const [busy, setBusy] = useState(false)
 
   const modelsQuery = useQuery({
-    queryKey: assignKeys.models(),
-    queryFn: () => getLlmModels(access_token),
-    enabled: !!access_token,
+    queryKey: assignKeys.models(orgId),
+    queryFn: () => getLlmModels(orgId, access_token),
+    enabled: !!orgId && !!access_token,
     staleTime: 5 * 60_000,
     retry: false,
   })
@@ -84,6 +87,7 @@ export default function AiQuizTab({ courseUuid }: { courseUuid?: string }) {
       t('ext.tools.assign.ai.drafting', { defaultValue: '大模型正在出题，可能要十几秒…' })
     )
     const res = await draftFromActivity(
+      orgId,
       courseUuid,
       activityUuid,
       { n, types: kinds, model: model || undefined },
@@ -112,7 +116,7 @@ export default function AiQuizTab({ courseUuid }: { courseUuid?: string }) {
   async function handleValidate() {
     if (!spec) return
     setBusy(true)
-    const res = await validateSpec(spec, access_token)
+    const res = await validateSpec(orgId, spec, access_token)
     setBusy(false)
     if (!res.success) {
       setPreview(null)
@@ -130,7 +134,9 @@ export default function AiQuizTab({ courseUuid }: { courseUuid?: string }) {
     const toastId = toast.loading(
       t('ext.tools.assign.ai.creating', { defaultValue: '正在布置…' })
     )
-    const res = await createFromSpec(courseUuid, Number(chapterId), spec, publish, access_token)
+    const res = await createFromSpec(
+      orgId, courseUuid, Number(chapterId), spec, publish, access_token
+    )
     setBusy(false)
     if (!res.success) {
       toast.error(

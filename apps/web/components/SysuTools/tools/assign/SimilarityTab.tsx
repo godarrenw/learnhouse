@@ -10,6 +10,7 @@ import { AlertTriangle, Copy, FileSearch, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { useLHSession } from '@components/Contexts/LHSessionContext'
+import { useOrg } from '@components/Contexts/OrgContext'
 import { getAssignmentsFromACourse } from '@services/courses/assignments'
 import { getSimilarity } from '@services/ext/assign'
 import { asArray } from '@services/utils/ts/requests'
@@ -21,6 +22,8 @@ export default function SimilarityTab({ courseUuid }: { courseUuid?: string }) {
   const { t } = useTranslation()
   const session = useLHSession() as any
   const access_token = session?.data?.tokens?.access_token
+  const org = useOrg() as any
+  const orgId: number = org?.id ?? 0
 
   const [assignmentUuid, setAssignmentUuid] = useState('')
   const [threshold, setThreshold] = useState(0.8)
@@ -39,8 +42,8 @@ export default function SimilarityTab({ courseUuid }: { courseUuid?: string }) {
 
   const simQuery = useQuery({
     queryKey: assignKeys.similarity(assignmentUuid, threshold),
-    queryFn: () => getSimilarity(assignmentUuid, threshold, access_token),
-    enabled: !!assignmentUuid && !!access_token,
+    queryFn: () => getSimilarity(orgId, assignmentUuid, threshold, access_token),
+    enabled: !!orgId && !!assignmentUuid && !!access_token,
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   })
