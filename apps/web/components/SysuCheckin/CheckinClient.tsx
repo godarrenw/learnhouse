@@ -110,7 +110,9 @@ export default function CheckinClient({ orgslug, sessionUuid }: Props) {
   }
 
   if (!access_token) {
-    const next = `/orgs/${orgslug}/checkin/${sessionUuid}${
+    // 用 getUriWithOrg 而不是手拼 /orgs/<slug>/…：单租户部署下真实路径是 /checkin/…，
+    // 手拼的那种只在多租户下成立，单租户会 404。
+    const next = `${getUriWithOrg(orgslug, `/checkin/${sessionUuid}`)}${
       tokenFromUrl ? `?t=${encodeURIComponent(tokenFromUrl)}` : ''
     }`
     return (
@@ -125,7 +127,7 @@ export default function CheckinClient({ orgslug, sessionUuid }: Props) {
           })}
         >
           <Link
-            href={`/auth/login?next=${encodeURIComponent(next)}`}
+            href={`${getUriWithOrg(orgslug, '/login')}?next=${encodeURIComponent(next)}`}
             className="inline-flex items-center justify-center rounded-lg bg-black text-white px-5 py-2.5 text-sm font-semibold hover:bg-gray-800 transition-colors"
             data-testid="checkin-login-link"
           >
@@ -167,7 +169,12 @@ export default function CheckinClient({ orgslug, sessionUuid }: Props) {
     )
   }
 
-  const courseHref = getUriWithOrg(orgslug, `/course/${info.course_uuid}`)
+  // 学生端课程页的路径段不带 course_ 前缀（页面自己会补回去），
+  // 直接拼 course_uuid 会请求到 course_course_xxx 而 404。
+  const courseHref = getUriWithOrg(
+    orgslug,
+    `/course/${info.course_uuid.replace('course_', '')}`
+  )
 
   // ---- 结果态 ----------------------------------------------------------
   if (outcome.kind === 'ok' || info.already_checked_in) {
