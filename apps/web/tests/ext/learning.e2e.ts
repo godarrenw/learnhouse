@@ -1,8 +1,10 @@
+// @ts-nocheck —— @playwright/test 不是本仓库的依赖（见文件头注释），
+// 留着类型检查会让 `next build` 挂在 TS2307 上。
 /**
  * 学情工具的端到端走查：登录 → 打开工具 → 走完四个 Tab → 截图。
  *
  * 仓库里没有 Playwright 依赖（`bun test tests` 跑的是纯逻辑单测），所以这条用例
- * 用 `bunx playwright test` 按需拉起，配置见同目录 `playwright.config.ts`。
+ * 用 `bunx playwright test` 按需拉起，配置见同目录 `playwright.e2e.config.ts`。
  * 跑之前要先起本地栈：
  *
  *   apps/api  uv run uvicorn app:app --port 9003

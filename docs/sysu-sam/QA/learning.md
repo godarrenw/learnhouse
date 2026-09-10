@@ -78,15 +78,30 @@ All checks passed!
 
 ## 前端端到端
 
-`apps/web/tests/ext/learning.spec.ts`（配置 `tests/ext/playwright.config.ts`）。
-仓库本身没有 Playwright 依赖（`bun test tests` 跑的是纯逻辑单测），所以这条用例用外部的
-playwright 运行器按需拉起，不改 `package.json`：
+`apps/web/tests/ext/learning.e2e.ts`（配置 `tests/ext/playwright.e2e.config.ts`）。
 
+仓库本身没有 Playwright 依赖（`bun test tests` 跑的是纯逻辑单测），所以运行器要外挂。
+**文件名是 `.e2e.ts` 不是 `.spec.ts`，两个文件头上都有 `// @ts-nocheck`**，两件事都是必须的：
+
+- bun 的测试发现会把 `*.spec.ts` 当单测收进 `bun test tests`，而那里没有 `@playwright/test`，
+  整个仓库的单测会红（实测：`263 pass, 1 fail, 1 error`）
+- `next build` 会按 tsconfig 的 `include: ["**/*.ts"]` 对这两个文件做类型检查，
+  同样因为找不到 `@playwright/test` 报 TS2307，生产镜像会构建失败
+
+跑法（`bunx playwright test` 不行 —— bunx 解析到的是 `playwright` 核心包，没有 `test` 子命令；
+带 `--package=@playwright/test` 也解析不到配置文件里的 import）：
+
+```sh
+# 找一个仓库外的目录装运行器，别装进 apps/web，避免动 package.json / bun.lock
+mkdir -p /tmp/lh-pw && cd /tmp/lh-pw && bun add -d @playwright/test@1.56.0
+bunx playwright install chromium        # 只需一次
+
+cd <repo>/apps/web
+NODE_PATH=/tmp/lh-pw/node_modules /tmp/lh-pw/node_modules/.bin/playwright \
+  test -c tests/ext/playwright.e2e.config.ts
 ```
-$ bunx playwright install chromium        # 只需一次
-$ cd apps/web && bunx playwright test -c tests/ext/playwright.config.ts
-2 passed
-```
+
+本次结果：`2 passed`。
 
 跑之前要起本地栈（本次用的端口）：
 
@@ -127,6 +142,8 @@ apps/web  bun run dev --port 3003
 
 ## 已知问题与未做项
 
+0. **`bun test tests` 与 `bunx tsc --noEmit` 都是干净的**：`263 pass, 0 fail`；
+   `tsc` 对 `components/SysuTools/**`、`services/ext/**`、`tests/ext/**` 零报错。
 1. **`bun run lint:strict` 在 `sysu-sam` 上本来就不过** —— 35 条 error 全在上游文件里
    （`components/Utils/ClientComp.tsx`、`Dashboard/Analytics/**`、`Boards/Extensions/**` 等），
    与本功能无关，本分支一个字都没改这些文件。学情自己的文件在 `bun run lint` 下零 error、零 warning，
