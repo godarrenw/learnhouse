@@ -91,8 +91,11 @@ code   = int(mac[-8:]) % 10**6，左补零        # 屏幕上的 6 位口令
    TTL = 2×refresh_seconds）。Redis 不可用时自动降级到数据库唯一约束
    `(session_id, user_id)`——效果一样是「一场一账号一次」，只是少一层快速拒绝。
 3. 限流：每用户每秒最多提交一次。
-4. IP 记录：优先 `CF-Connecting-IP`（后面接 Cloudflare 隧道会带，客户端伪造不了），
-   其次 `X-Forwarded-For` 的第一个，最后落到直连地址。
+4. IP 记录：优先 `CF-Connecting-IP`，其次 `X-Forwarded-For` 的第一个，
+   最后落到直连地址。**这个头是无条件信任的**——隧道接上之后它由 Cloudflare 设置，
+   可信；但直连 origin 时客户端可以随便伪造，所以这一列**只作审计参考，不作判定依据**。
+   （上游的 `get_client_ip` 只在直连来源是内网地址时才信代理头，签到这里没有沿用，
+   因为限流的 key 是 user_id 而不是 IP，IP 只进记录。）
 
 **没做的，写清楚：**
 
@@ -165,14 +168,15 @@ $ bunx eslint --max-warnings 0 components/SysuTools components/SysuCheckin \
 
 两个被改动的上游文件（`course.tsx`、`activity.tsx`）改动前后都是 0 error。
 
-**`bun run lint:strict` 整体仍然失败**，35 个 error 全部是既有的上游问题
-（admin/embed 的 layout 缺 React 引用、analytics 图表组件的
+**`bun run lint:strict` 整体仍然失败**，报 35 个 error。逐条看下来全部落在既有的
+上游文件里（admin/embed 的 layout 缺 React 引用、analytics 图表组件的
 "Cannot create components during render"、PasswordStrengthIndicator 的正则转义等），
-与本分支无关，改动前后计数一致。
+本分支新增或改动的文件一条也没有。**没有测过 sysu-sam 基线上的具体数字**，
+所以这里只说「全部在上游文件里、本分支贡献 0 条」，不说「计数不变」。
 
 ### Playwright 端到端（本地预发栈）
 
-`apps/web/tests/ext/checkin.spec.ts`，**7 条全过**（19.8s → 31.4s，多次运行稳定）：
+`apps/web/tests/ext/checkin.spec.ts`，**8 条全过**（24.6s，多次运行稳定）：
 
 | # | 用例 | 截图 |
 |---|---|---|
@@ -182,7 +186,8 @@ $ bunx eslint --max-warnings 0 components/SysuTools components/SysuCheckin \
 | 4 | 口令路径签到成功 | `05-student-code-ok.png` |
 | 5 | 老师端名单出现签到者，关闭，CSV 能导出 | `06-present-with-records.png`、`07-tool-after-close.png` |
 | 6 | 课程页顶部出现「本节课签到」入口条 | `09-course-banner.png` |
-| 7 | 关闭之后的会话拒绝签到（410 `session_closed`） | `08-student-after-close.png` |
+| 7 | 未登录扫码 → 登录 → 回跳并自动签到（`?t=` 原样保留） | `10-anon-login-prompt.png`、`11-anon-after-login-ok.png` |
+| 8 | 关闭之后的会话拒绝签到（410 `session_closed`） | `08-student-after-close.png` |
 
 CSV 实际内容（本地栈，两条记录，两种方式）：
 
@@ -205,6 +210,10 @@ docker run -d --name lh-redis-fwd-16379 --network learnhouse-local_learnhouse-ne
 cd apps/api
 export LEARNHOUSE_SQL_CONNECTION_STRING=postgresql://learnhouse:learnhouse@127.0.0.1:15432/learnhouse
 uv run alembic stamp b1c2d3e4f5a6 && uv run alembic upgrade head
+# 验完记得 stamp 回去：本地栈的库是几个功能分支共用的，把 alembic_version 停在
+# sam1checkin01 会让还没合入本分支的人跑 upgrade head 时报 Can't locate revision。
+# 表本身留着不影响任何人（迁移和 create_all 都会跳过已存在的表）。
+uv run alembic stamp b1c2d3e4f5a6
 
 # 3. 起后端与前端（端口按并行约定错开）
 uv run uvicorn app:app --port 9004
@@ -224,13 +233,13 @@ bunx playwright test -c tests/ext/playwright.config.ts
 
 ## 七、已知限制与待办
 
-1. **教学工具的容器路由还没接上**。签到的工具主体是
-   `components/SysuTools/tools/checkin/CheckinTool.tsx`，靠
-   `components/SysuTools/registry.ts` 的 `checkin` 条目被 `dash/tools/[tool]`
-   渲染，而那个路由属于骨架代理，撰写本文时还没合入。端到端验证是用一个**临时的**
-   同名路由跑通的，那个文件没有提交。骨架落地后 rebase，spec 里的 URL
-   （`/dash/tools/checkin`）不用改。临时路由的内容就是 UI_GUIDE 3.9 节的标准页面壳
-   （页头三件套 + `motion.div` 淡入）里渲染 `getSysuTool(params.tool).component`。
+1. **`dash/tools/[tool]` 路由里放了一份占位实现**。这个文件属于骨架代理，
+   撰写本文时骨架还没合入。为了让功能真的能打开、让 e2e 跑得起来，
+   本分支带了一份占位版（UI_GUIDE 3.9 的标准页面壳 + 从 registry 取组件渲染），
+   文件头写了警示注释。**rebase 到骨架之后，如果骨架有自己的版本，删掉本分支这份用骨架的**，
+   签到侧不需要任何改动，URL 仍是 `/dash/tools/checkin`。
+   同理 `components/SysuTools/registry.ts` 和 `apps/api/src/routers/ext/__init__.py`
+   也是整份新建的骨架文件，rebase 时以骨架为准，只把签到那一行加回去。
 
 2. **i18n 的 ext 命名空间还没被加载**。文案在 `locales/ext/{zh,en}.json`，66 个 key
    中英一一对应，但把这个包 merge 进 `lib/i18n.ts` 是骨架代理的活。在那之前，

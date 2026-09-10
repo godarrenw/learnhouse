@@ -256,6 +256,48 @@ test.describe('上课签到', () => {
     await page.context().close()
   })
 
+  test('未登录扫码 → 登录 → 回跳并自动签到', async ({ browser }) => {
+    // 单独开一场，避免和前面几条用例的会话状态互相干扰
+    const bannerCourseUuid = await publicCourseUuid()
+    const created = await api.post(
+      `/api/v1/ext/checkin/courses/${bannerCourseUuid}/sessions`,
+      { data: { title: '未登录回跳验证', refresh_seconds: 20 } }
+    )
+    expect(created.ok()).toBeTruthy()
+    const fresh = await created.json()
+    const live = await readLive(api, fresh.session_uuid)
+
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    // 没有任何登录态，直接打开二维码里那个地址
+    await page.goto(`${WEB}/checkin/${fresh.session_uuid}?t=${live.token}`)
+    await expect(page.getByTestId('checkin-login-link')).toBeVisible({
+      timeout: 30_000,
+    })
+    await shot(page, '10-anon-login-prompt')
+
+    await page.getByTestId('checkin-login-link').click()
+    // 回跳目标要原样带着 ?t=，否则登录回来还得再扫一次
+    await page.waitForURL(/\/login\?next=/, { timeout: 30_000 })
+    expect(decodeURIComponent(page.url())).toContain(`?t=${live.token}`)
+
+    await page.locator('input[type="email"]').first().fill(STUDENT_EMAIL)
+    await page.locator('input[type="password"]').first().fill(STUDENT_PASSWORD)
+    await page.locator('button[type="submit"]').first().click()
+
+    // 登录后回到签到页，带着 token 自动提交
+    await page.waitForURL(new RegExp(`/checkin/${fresh.session_uuid}`), {
+      timeout: 45_000,
+    })
+    await expect(page.getByTestId('checkin-result-ok')).toBeVisible({
+      timeout: 30_000,
+    })
+    await shot(page, '11-anon-after-login-ok')
+
+    await api.post(`/api/v1/ext/checkin/sessions/${fresh.session_uuid}/close`)
+    await context.close()
+  })
+
   test('关闭之后的会话拒绝签到', async ({ browser }) => {
     const context = await browser.newContext()
     const page = await context.newPage()
