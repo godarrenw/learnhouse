@@ -13,7 +13,7 @@
  * 详见 `docs/sysu-sam/EXT_TOOLS.md`。
  */
 import { lazy } from 'react'
-import { Activity, ClipboardPen, GraduationCap, LayoutGrid } from 'lucide-react'
+import { Activity, ClipboardPen, FileText, GraduationCap, LayoutGrid } from 'lucide-react'
 
 import type { SysuTool, SysuToolRole } from './types'
 
@@ -27,6 +27,15 @@ export const SYSU_TOOLS: SysuTool[] = [
     icon: LayoutGrid,
     component: lazy(() => import('./tools/Overview/ToolsOverview')),
     minRole: 'instructor',
+  },
+  {
+    key: 'content',
+    titleKey: 'ext.tools.content.title',
+    descKey: 'ext.tools.content.description',
+    icon: FileText,
+    component: lazy(() => import('./tools/Content/ContentTools')),
+    minRole: 'instructor',
+    courseScoped: true,
   },
   {
     key: 'example',

@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """SYSU-SAM 内容工具：Markdown 导入导出、视频嵌入解析、虚拟助教、二维码。
 
-挂载点在 `src/routers/ext/__init__.py`（骨架代理维护），前缀 `/ext/content`，
-**教师身份这道闸是在挂载时统一加的**（`dependencies=[Depends(require_teacher)]`），
-所以本文件里的路由不再各自判断角色。课程级权限另算：每个写操作最终都会落到上游
-service 里的 `check_resource_access`，越权的人拿不到 200。
+挂在 `src/routers/ext/__init__.py` 的 `SUBMODULES` 上，前缀 `/ext/content`。
+
+权限两道门（口径见 docs/sysu-sam/EXT_TOOLS.md）：
+组织级用 `deps.require_teacher`（Admin / Maintainer / Instructor），
+**它把 org_id 声明成 query 参数，所以这些接口调用方必须带 `?org_id=<id>`**；
+课程级由业务层再收窄一次 —— 建章节、建活动、写内容、传图片最终都会落到上游
+service 的 `check_resource_access`，导出也在服务层显式查了一次 READ。
 
 业务逻辑全部在 `src/services/ext/content_tools/`，这一层只做 HTTP 与错误翻译。
 """
@@ -20,7 +23,7 @@ from src.core.events.database import get_db_session
 from src.db.courses.activities import Activity
 from src.db.organization_config import OrganizationConfig
 from src.db.users import PublicUser
-from src.security.auth import get_current_user
+from src.routers.ext.deps import require_teacher
 from src.services.ext.content_tools import avatar as avatar_svc
 from src.services.ext.content_tools import qrgen
 from src.services.ext.content_tools.activities import append_avatar_embed
@@ -112,7 +115,7 @@ async def api_import_course_markdown(
     file: UploadFile = File(..., description="zip 压缩包"),
     publish: bool | None = Query(None, description="统一指定发布状态；不给就沿用每个 md 头里的 published"),
     db_session: AsyncSession = Depends(get_db_session),
-    current_user: PublicUser = Depends(get_current_user),
+    current_user: PublicUser = Depends(require_teacher),
 ):
     zip_bytes = await file.read()
     if len(zip_bytes) > MAX_ZIP_BYTES:
@@ -146,7 +149,7 @@ async def api_export_course_markdown(
     course_uuid: str,
     download_images: bool = Query(True, description="是否把页内图片一起打进包里"),
     db_session: AsyncSession = Depends(get_db_session),
-    current_user: PublicUser = Depends(get_current_user),
+    current_user: PublicUser = Depends(require_teacher),
 ):
     result = await export_course_markdown(
         request, course_uuid, current_user, db_session, download_images=download_images)
@@ -189,7 +192,7 @@ async def api_export_course_markdown(
 async def api_resolve_embed(
     *,
     body: EmbedResolveRequest,
-    current_user: PublicUser = Depends(get_current_user),
+    current_user: PublicUser = Depends(require_teacher),
 ):
     try:
         # resolve_embed 里的短链解析是同步 urllib，不能直接在事件循环里跑
@@ -216,11 +219,11 @@ async def api_resolve_embed(
 )
 async def api_avatar_config(
     *,
-    org_id: int | None = Query(None, description="按这个组织的配置来取；不给就只看环境变量和默认值"),
+    org_id: int,
     db_session: AsyncSession = Depends(get_db_session),
-    current_user: PublicUser = Depends(get_current_user),
+    current_user: PublicUser = Depends(require_teacher),
 ):
-    org_config = await _org_config_by_id(db_session, org_id) if org_id is not None else None
+    org_config = await _org_config_by_id(db_session, org_id)
     try:
         return avatar_svc.resolve_page_url(org_config)
     except AvatarError as e:
@@ -250,7 +253,7 @@ async def api_append_avatar(
     activity_uuid: str,
     body: AvatarAppendRequest,
     db_session: AsyncSession = Depends(get_db_session),
-    current_user: PublicUser = Depends(get_current_user),
+    current_user: PublicUser = Depends(require_teacher),
 ):
     org_config = await _org_config_of_activity(db_session, activity_uuid)
     try:
@@ -283,7 +286,7 @@ async def api_qr_svg(
     text: str = Query(..., min_length=1, max_length=MAX_QR_TEXT_CHARS, description="要编码的文本或链接"),
     scale: int = Query(8, ge=1, le=32, description="每个格子的像素边长"),
     caption: str | None = Query(None, max_length=60, description="排在码图下方的说明文字"),
-    current_user: PublicUser = Depends(get_current_user),
+    current_user: PublicUser = Depends(require_teacher),
 ):
     try:
         matrix, _version, _mask = qrgen.make_matrix(text)

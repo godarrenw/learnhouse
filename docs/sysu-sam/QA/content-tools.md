@@ -19,11 +19,11 @@ uv run --no-sync ruff check src/services/ext src/routers/ext src/tests/ext
 
 | 项 | 结果 |
 |---|---|
-| pytest | 80 passed |
+| pytest（`src/tests/ext` 全量，含骨架的 12 条） | 92 passed |
 | ruff | All checks passed |
 
-80 条里 73 条是纯逻辑（不碰库不碰网），7 条用 conftest 的内存 SQLite 真跑
-service 调用。
+本分支贡献 80 条：73 条纯逻辑（不碰库不碰网），7 条用 conftest 的内存 SQLite
+真跑 service 调用。
 
 **环境坑（其他代理也会踩）**：`uv sync` 装不上 `greenlet`，但 SQLAlchemy 的
 async 引擎必须要它，缺了所有碰数据库的测试都报
@@ -233,15 +233,34 @@ cd apps/web && bun install --frozen-lockfile && bun run lint:strict
 
 | 树 | 结果 |
 |---|---|
-| sysu-sam 原样（git stash 掉本分支改动） | ✖ 943 problems (35 errors, 908 warnings) |
-| 本分支 | ✖ 943 problems (35 errors, 908 warnings) |
+| 骨架分支原样 | ✖ 943 problems (35 errors, 908 warnings) |
+| 本分支 | ✖ 944 problems (35 errors, 909 warnings) |
 
-**计数完全相同，本次改动没有新增任何 error 或 warning。** 那 35 个 error 全在上游
-文件里（analytics 图表组件、Boards 拖拽 hook、`services/courses/transfer.ts` 等），
-本分支的四个前端文件一个都不在名单上。
+**error 数一个没涨**，那 35 个全在上游文件里（analytics 图表组件、Boards 拖拽
+hook、`services/courses/transfer.ts` 等）。
+
+多出来的 1 个 warning 交代清楚：它在 `Editor.tsx`，规则是 `react-hooks/refs`。
+这个文件基线上就有 40 条同规则的告警 —— 它把 session / activity 包成 ref 再用
+`getAccessToken()` 这样的 callback 读，规则会对**每一个用到该 callback 的地方**
+各报一条。上游自己的 `PasteFileHandler.configure({ getAccessToken })` 就占了一条，
+我的粘贴扩展复用同一个 accessor，于是多一条。
+
+不绕开它是有理由的：改成把 token 当普通值传，就得把它加进扩展数组的 `useMemo`
+依赖，session 刷新时整个编辑器扩展会重建。为了少一条告警去换一个真的会闪的编辑器，
+不划算。org id 那个参数确实是按普通值传的（`orgId: sysuOrgId`），因为它是个数字、
+不会频繁变。
+
+**我自己新写的文件全部 0 问题**，可以单独复核：
+
+```sh
+cd apps/web && bunx eslint components/SysuTools \
+  components/Objects/Editor/Extensions/SysuBilibiliPaste \
+  services/ext lib/query/keys.ts "app/orgs/[orgslug]/dash/tools"
+# 无输出
+```
 
 「lint:strict 必须过」这条验收标准在当前基线上没人能满足。已同步给 team-lead，
-建议要么由集成代理统一修掉这 35 个，要么把标准改成「不新增 error」。
+建议要么由集成代理统一修掉这 35 个 error，要么把标准改成「不新增 error」。
 
 ---
 

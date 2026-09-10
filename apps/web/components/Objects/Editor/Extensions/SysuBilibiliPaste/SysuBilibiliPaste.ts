@@ -4,7 +4,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import i18next from 'i18next'
 import toast from 'react-hot-toast'
 
-import { resolveEmbedUrl } from './api'
+import { resolveEmbedUrl } from '@services/ext/content'
 
 /**
  * 老师在编辑器里粘贴一条 bilibili 链接，直接变成播放器。
@@ -28,6 +28,8 @@ const IFRAME_RE = /^<iframe[\s\S]*<\/iframe>$/i
 
 export interface SysuBilibiliPasteOptions {
   getAccessToken: () => string | undefined
+  /** 后端的 require_teacher 把 org_id 声明成 query 参数，漏了会 422 */
+  orgId: number | undefined
   /** 插入的播放器高度，和 Markdown 导入那条路保持一致 */
   embedHeight: number
 }
@@ -55,12 +57,13 @@ const SysuBilibiliPaste = Extension.create<SysuBilibiliPasteOptions>({
   addOptions() {
     return {
       getAccessToken: () => undefined,
+      orgId: undefined,
       embedHeight: 400,
     }
   },
 
   addProseMirrorPlugins() {
-    const { getAccessToken, embedHeight } = this.options
+    const { getAccessToken, orgId, embedHeight } = this.options
     const editor = this.editor
 
     const t = (key: string, defaultValue: string) =>
@@ -83,13 +86,13 @@ const SysuBilibiliPaste = Extension.create<SysuBilibiliPasteOptions>({
 
     const handleVideoPaste = (source: string) => {
       const accessToken = getAccessToken()
-      if (!accessToken) return false
+      if (!accessToken || !orgId) return false
 
       const toastId = toast.loading(
         t('content.editor.paste.resolving', '正在解析视频链接…')
       )
 
-      resolveEmbedUrl(source, accessToken)
+      resolveEmbedUrl(source, orgId, accessToken)
         .then((res) => {
           const data = res.data as any
           if (!res.success || !data?.embed_url) {

@@ -6,7 +6,7 @@ import { apiFetch } from '@services/utils/ts/requests'
 import { Check, Copy, Globe, Ticket, UserSquare, Users, X } from 'lucide-react'
 import Link from 'next/link'
 /* --- SYSU-SAM: 内容工具 · 邀请码二维码 --- */
-import InviteQrButton from '@components/SysuTools/tools/content/InviteQrButton'
+import InviteQrButton from '@components/SysuTools/tools/Content/InviteQrButton'
 /* --- /SYSU-SAM --- */
 import React, { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'

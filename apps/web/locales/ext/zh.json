@@ -19,6 +19,10 @@
       "description": "所有教学工具的入口",
       "keywords": "教学工具,工具,tools,教学"
     },
+    "content": {
+      "description": "Markdown 导入导出、虚拟助教、二维码",
+      "keywords": "内容,markdown,导入,导出,虚拟助教,数字人,二维码,bilibili,视频"
+    },
     "example": {
       "description": "验证教学工具扩展点是否连通",
       "keywords": "示例,自检,health,example"
@@ -55,6 +59,86 @@
     "deleting": "正在删除…"
   },
   "tools": {
+    "content": {
+      "title": "内容工具",
+      "description": "Markdown 整课导入导出、给页面加虚拟助教、邀请码二维码。",
+      "tabs": {
+        "import": "导入 Markdown",
+        "export": "导出 Markdown",
+        "avatar": "虚拟助教",
+        "about": "说明"
+      },
+      "import": {
+        "title": "导入 Markdown",
+        "hint": "上传「导出 Markdown」生成的 zip。章节和页面一律新建，不会覆盖课程里已有的内容。",
+        "drop": "把 zip 拖到这里，或者点一下选文件",
+        "limit": "最大 {{mb}} MB",
+        "not_zip": "只接受 .zip 压缩包",
+        "too_large": "压缩包超过 {{mb}} MB",
+        "run": "开始导入",
+        "running": "正在导入，大课可能要等一会儿…",
+        "done": "导入完成：{{chapters}} 个章节，{{activities}} 个页面",
+        "failed": "导入失败",
+        "chapters": "新建章节",
+        "activities": "新建页面",
+        "skipped": "跳过",
+        "skipped_title": "没有还原的内容",
+        "warnings_title": "需要人工确认"
+      },
+      "export": {
+        "title": "导出 Markdown",
+        "hint": "打包成 zip：README 是课程信息和目录，每章一个目录，页内图片放 assets/。",
+        "lossy": "导出是有损的：只有内容页和整页嵌入能再导回来。托管视频、PDF、作业只导出占位说明。",
+        "run": "下载压缩包",
+        "running": "正在打包…",
+        "done": "已下载 {{name}}",
+        "failed": "导出失败",
+        "chapters": "章节",
+        "files": "文件",
+        "images": "图片",
+        "notes": "提醒",
+        "notes_hint": "压缩包里的 README「导出时的提醒」一节逐条写了是哪些内容没能带走。"
+      },
+      "avatar": {
+        "title": "虚拟助教",
+        "hint": "讲稿会压进链接的 # 后面，由浏览器自己朗读并驱动卡通头像。不占服务器资源，也不需要 API key。",
+        "page": "追加到哪一页",
+        "pick_page": "请选择…",
+        "no_pages": "这门课还没有富文本内容页",
+        "subtitle_label": "小标题（可不填）",
+        "subtitle_ph": "例如：本节要点回顾",
+        "script": "讲稿",
+        "script_ph": "直接写要念的内容，支持 Markdown。空行分段，段末会自动停顿。代码块、图片、表格念不出来，会被跳过。",
+        "chars": "{{count}} 字",
+        "page_url": "页面地址：{{url}}",
+        "run": "追加到页面末尾",
+        "running": "正在生成并追加…",
+        "done": "已追加到页面末尾",
+        "failed": "追加失败",
+        "result_title": "已追加到「{{name}}」",
+        "result_meta": "切成 {{lines}} 句，链接 {{length}} 字符。追加前已自动存了一版，可以在内容页版本回滚里撤回。",
+        "preview": "先预览一下再给学生看"
+      },
+      "qr": {
+        "button": "二维码",
+        "title": "注册二维码",
+        "description": "把这张码贴在教室或发到群里，学生扫码就能带着邀请码注册。",
+        "link_label": "注册链接",
+        "download": "下载 SVG",
+        "error": "二维码生成失败，请重试"
+      },
+      "about": {
+        "title": "这些工具怎么用",
+        "paste_title": "编辑器里粘贴视频链接",
+        "paste_body": "在内容页编辑器里粘贴一条 bilibili 链接，会自动变成播放器。视频页、带分 P 的地址、手机版、av 号、b23.tv 短链、已经是播放器的地址、官方 iframe 代码整段，七种都认。抖音和腾讯视频会照常插入，但会提示你自己预览一下 —— 它们的播放器我们没能实际验证过。",
+        "qr_title": "邀请码二维码",
+        "qr_body": "在「用户 → 注册方式」页面，每个邀请码那一行都有一个二维码按钮，可以下载 SVG 去印刷或发到群里。",
+        "transfer_title": "导入导出的边界",
+        "transfer_body": "能来回搬的只有内容页和整页嵌入。托管视频和 PDF 的原始文件不在压缩包里，作业请用作业工具的学期复用功能搬。导入一律新建章节，不会覆盖课程里已有的内容。",
+        "avatar_title": "虚拟助教怎么工作",
+        "avatar_body": "讲稿不存在服务器上，而是压缩后塞进链接的 # 后面。页面读到之后用浏览器自带的语音合成念出来，同时驱动头像的口型和字幕。所以链接会很长，这是正常的；也因此这个链接不能手工改，改了讲稿就没了。"
+      }
+    },
     "example": {
       "title": "扩展自检",
       "description": "调用后端 /ext/health，确认教学工具的前后端扩展点已经打通。",

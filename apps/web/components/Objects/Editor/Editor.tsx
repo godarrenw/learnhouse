@@ -153,6 +153,11 @@ function Editor(props: EditorProps) {
     () => sessionRef.current?.data?.tokens?.access_token,
     []
   )
+  /* --- SYSU-SAM: 内容工具 · 粘贴视频链接自动变播放器 --- */
+  // org.id 是个普通数字，直接当值传给扩展并进 useMemo 依赖就行，
+  // 不用像 session / activity 那样包 ref。
+  const sysuOrgId: number | undefined = props.org?.id
+  /* --- /SYSU-SAM --- */
   // Capture the activity object at first render so extensions get a stable
   // reference; extensions only read static fields like activity_uuid that
   // don't change during a session. Keyed off activity_uuid below so a new
@@ -204,13 +209,13 @@ function Editor(props: EditorProps) {
         getAccessToken,
       }),
       /* --- SYSU-SAM: 内容工具 · 粘贴视频链接自动变播放器 --- */
-      SysuBilibiliPaste.configure({ getAccessToken, embedHeight: 400 }),
+      SysuBilibiliPaste.configure({ getAccessToken, orgId: sysuOrgId, embedHeight: 400 }),
       /* --- /SYSU-SAM --- */
       MagicBlock.configure({ editable: true, activity: stableActivity }),
       AIStreamingMark,
       AISelectionHighlight,
     ],
-    [stableActivity, currentPlan, getAccessToken]
+    [stableActivity, currentPlan, getAccessToken, sysuOrgId]
   )
 
   React.useEffect(() => {

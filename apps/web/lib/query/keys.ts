@@ -132,6 +132,11 @@ export const queryKeys = {
       recent: (orgId: number, days: number) =>
         ['ext', 'learning', 'recent', orgId, days] as const,
     },
+    content: {
+      avatarConfig: (orgId: number) => ['ext', 'content', 'avatarConfig', orgId] as const,
+      courseTree: (courseUuid: string) => ['ext', 'content', 'tree', courseUuid] as const,
+      qr: (text: string) => ['ext', 'content', 'qr', text] as const,
+    },
   },
   /* --- /SYSU-SAM --- */
 }
