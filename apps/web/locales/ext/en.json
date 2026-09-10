@@ -223,7 +223,11 @@
         "no_answer_yet": "Nobody has answered yet",
         "student": "Student",
         "status": "Status",
-        "score": "Score"
+        "score": "Score",
+        "email": "Email",
+        "csv_right": "right",
+        "csv_wrong": "wrong",
+        "csv_blank": "blank / manual"
       },
       "sim": {
         "setup": "Similarity settings",

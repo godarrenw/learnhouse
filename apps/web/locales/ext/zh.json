@@ -223,7 +223,11 @@
         "no_answer_yet": "还没有人作答",
         "student": "学生",
         "status": "状态",
-        "score": "得分率"
+        "score": "得分率",
+        "email": "邮箱",
+        "csv_right": "对",
+        "csv_wrong": "错",
+        "csv_blank": "未答/需人工"
       },
       "sim": {
         "setup": "查重设置",

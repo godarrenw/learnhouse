@@ -125,57 +125,72 @@ LLM 调用在测试里只 mock 了 `chat_completion` 这一个联网入口。
 `grading_type` / `solution_reveal` / `due_date` 三个字段的非法取值改回默认值，
 并在警告里写明「原值是什么」。截图 `2-ai-preview.png` 里那条黄色提示就是它。
 
-### 4.3 前端走查（带断言，不只是截图）
+### 4.3 前端 E2E（apps/e2e 套件里的 spec）
 
-本地起后端 9005（连预发栈的 Postgres/Redis）+ 前端 3005，用管理员账号登录后
-走完五个 Tab。脚本 `docs/sysu-sam/QA/assign/shots.mjs`（配 `login.mjs` 存登录态）
-在仓库根目录跑，**任何一条断言不成立就非零退出**：
+`apps/e2e/features/ext/assign/tests/01-assign-tools.spec.ts`，7 条用例，和骨架的 ext
+用例跑在同一个套件里（一起 13 条全过）。
+
+夹具在 `features/ext/assign/api.ts`，**全部走 REST API 建、跑完删**，不碰数据库，
+所以对着自己 boot 的干净实例或 `E2E_SKIP_BOOT=1` 指向的本地预发栈都能跑，
+也不会在共享的预发栈里留垃圾。它造出来的东西：一门带随机后缀的课 + 一个章节、
+一个改过两次因而有历史版本的富文本内容页、一份 2099-03-01 截止的作业、
+一份形成性随堂测（顺带把 `quick-quiz` 接口也验了），以及一份学生交的卷。
 
 ```
-$ node docs/sysu-sam/QA/assign/login.mjs
-$ node docs/sysu-sam/QA/assign/shots.mjs
-  ok   五个分段 Tab 都在
-  ok   AI 出题的内容页下拉拉到了课程结构
-  ok   模型下拉拉到了 /ext/assign/llm/models 的结果
-  ok   AI 出题返回了至少一道可编辑的题
-  ok   出完题后出现了「一键布置」
-  ok   随堂测默认勾着「形成性」
-  ok   随堂测表单默认给了一道题
-  ok   查重有阈值滑块
-  ok   查重结果原样显示了后端的免责说明
-  ok   学期复用摘要回显了新课程名
-  ok   只试算，没有真的复制课程
-  ok   版本列表拉到了历史版本
-  ok   diff 视图出来了
-  ok   400px 窄屏没有横向溢出
-  ok   除上游 analytics 外没有失败请求（实际 0 条）
-全部断言通过
+$ cd apps/e2e
+$ E2E_SKIP_BOOT=1 \
+  E2E_BASE_URL=http://localhost:3005 \
+  E2E_API_URL=http://localhost:9005/api/v1 \
+  E2E_ADMIN_EMAIL=user1@example.local E2E_ADMIN_PASSWORD='LocalDev#2026' \
+  E2E_STUDENT_EMAIL=user2@example.local E2E_STUDENT_PASSWORD='LocalDev#2026' \
+  bun run test features/ext
+  ...
+  13 passed (20.8s)
 ```
 
-被忽略的那一条失败请求是上游的 `POST /api/v1/analytics/events` 400（本地没配 PostHog），
-和作业工具无关。顺带截下的图：
+七条用例分别钉住：
+
+| 用例 | 钉住的性质 |
+|---|---|
+| 五个 Tab 都挂出来了 | 注册表条目生效，工具页不是空壳 |
+| AI 出题 | 内容页下拉来自课程结构树；**真调大模型**出题并渲染成可编辑预览（题干断言 `toBeEditable`）；没配端点时是明确禁用 + 一句人话 |
+| 随堂测 | 形成性默认勾上；学生全选对 → 那道题答对率 100%；导出 CSV 按钮可用 |
+| 查重 | 后端的免责说明原样出现在页面上（断言含「不是抄袭的结论」）—— 这是产品口径不是装饰 |
+| 学期复用 | 摘要回显新课名与顺延后的 2099-08-30；**并回查课程数没变**，证明 confirm=false 真的没写库 |
+| 版本回滚 | 至少两个历史版本；点最老那一版能 diff 出第一稿的正文；两栏与合并两种视图都在 |
+| 窄屏 | 400px 下 `scrollWidth <= clientWidth`，不横向溢出 |
+
+学生那一段是**可选**的：本地预发库是邀请制，`createStudent` 会 403。设了
+`E2E_STUDENT_EMAIL/PASSWORD` 就复用已有账号交一份卷，没设就只验题目清单渲染，
+并在用例的 annotation 里写明跳过了哪一段。`beforeAll` 会打印这一轮走的是哪条路，
+不会静默降级。
+
+顺手截的图（跑的时候加 `EXT_SHOTS=1`，写到 `docs/sysu-sam/QA/assign/`）：
 
 | 截图 | 内容 |
 |---|---|
-| `1-ai-setup.png` | AI 出题设置：内容页下拉（真实课程结构）、题量、题型多选、模型下拉（真实模型列表） |
-| `2-ai-preview.png` | 真调大模型出题后的可编辑预览 + 字段被改回默认值的警告 |
-| `3-quiz-form.png` | 随堂测快速表单 |
-| `4-quiz-results.png` | 随堂测结果面板 |
-| `5-similarity.png` | 查重：阈值滑块 + 结果区 |
-| `6-clone-summary.png` | 学期复用向导第三步的确认摘要（`confirm=false` 真跑出来的） |
-| `7-versions-diff.png` | 版本列表（预发栈里这一页有 v1–v5，当前 v6） |
-| `8-versions-unified.png` | unified diff 视图 |
-| `9-mobile-ai.png` | 400px 窄屏，脚本断言了 `scrollWidth <= clientWidth`，没有横向溢出 |
+| `1-ai-setup.png` | AI 出题设置：内容页下拉、题量、题型多选、模型下拉 |
+| `2-ai-preview.png` | 真调大模型出题后的可编辑预览 |
+| `3-quiz-results.png` | 随堂测结果：1/1 已交、答对率 100%、导出 CSV 按钮 |
+| `4-similarity.png` | 查重：阈值滑块 + 免责说明 |
+| `5-clone-summary.png` | 学期复用向导第三步的确认摘要 |
+| `6-versions-diff.png` | 两栏 diff |
+| `7-versions-unified.png` | unified diff |
+| `8-mobile.png` | 400px 窄屏 |
 
 ### 4.4 类型检查与 lint
 
-`npx tsc --noEmit` 在整个 `apps/web` 上退出码 0，无任何输出 —— dev 用的 Turbopack
-不做类型检查，页面能渲染不等于 `bun run build` 能过，所以这一步单独跑了一次
-（把骨架脚手架临时拷进来补齐 `registry.ts` / `types.ts` / `shared/` 之后跑的）。
+dev 用的 Turbopack 不做类型检查，页面能渲染不等于 `bun run build` 能过，所以两个
+workspace 都单独跑了一次，都是退出码 0：
+
+```
+$ cd apps/web && bunx tsc --noEmit -p .      # 退出码 0，无输出
+$ cd apps/e2e && bun run typecheck           # 退出码 0，无输出
+```
 
 `bun run lint:strict` 在本分支上报 35 个 error，**全部落在上游文件**
 （`services/courses/transfer.ts`、`components/Dashboard/Boards/Extensions/*`、
-Analytics 系列等），是既有欠债。作业工具自己的文件单独跑：
+Analytics 系列等），和基线持平，没有新增。作业工具自己的文件单独跑：
 
 ```
 $ npx eslint --max-warnings=0 components/SysuTools/tools/assign services/ext/assign.ts
@@ -184,25 +199,21 @@ $ npx eslint --max-warnings=0 components/SysuTools/tools/assign services/ext/ass
 
 ## 五、没做 / 做不了的
 
-1. **随堂测结果与查重没有真实数据可看。** 预发栈里 `assignmenttasksubmission` 表是空的
-   （0 行），所以 `4-quiz-results.png` 与 `5-similarity.png` 拍到的是空态。
-   这两块的计算逻辑由 pytest 用造出来的提交覆盖（答对率 50%、找出近似的一对、
-   同 sha256 文件），不是没验，是没有生产数据可拍。
+1. **查重的相似对没有端到端验过。** 找出「两个学生答得像」需要至少两个学生各交一份
+   长答案，而本地预发库是邀请制，e2e 只能复用一个已有学生账号。所以 e2e 只验了
+   免责说明与阈值控件，相似度算法本身、剔除标准答案、同 sha256 文件这些由 pytest
+   用造出来的提交覆盖。随堂测的答对率则已经是端到端真数据（学生真交卷、页面真显示
+   100%）。
 2. **文件题查重只支持 PDF 与纯文本。** PDF 走后端已有的 `pypdf`；docx 需要
    `python-docx`，后端没有这个依赖，也不为查重单独加。抽不出文本的文件只按 sha256
    比对，结果的 `notes` 里会逐个点名说明。
 3. **编程题（`code`）的判分依赖 Judge0**，本实例是否配置未验证。spec 支持这种题型，
    但没在预发栈上试过，用之前先在测试课程上试一次。
 4. **没有加 alembic 迁移**，作业工具全部复用上游已有的表。
-5. **接入骨架的两处改动还没落进分支**，见下一节 —— 这条分支是在骨架合入
-   `sysu-sam` 之前开的。
-6. **随堂测的结果面板没有导出 CSV。** 骨架给了 `ExportCsvButton`，接上去很便宜，
-   但需求里没写，就没加。
-7. **没有往 `apps/e2e` 的 playwright 套件里加 spec。** 上面 4.3 那份走查是带断言的
-   独立脚本，能当验收跑，但它不在 `playwright test` 套件里 —— 套件的 global-setup
-   会自起一套实例，而这条分支的走查依赖预发栈里的真实课程与版本历史。
-   骨架合入后，`apps/e2e/features/ext/tests/` 是约定位置，把这份走查改写成
-   跟着套件跑的 spec 是一件待办。
+5. **e2e 的夹具会被同一套实例上别的用例改到。** 有一次和别的 ext 用例一起跑时，
+   我造的内容页被另一条用例追加了内容，多出两个版本，于是「点第一行版本」那条断言
+   挂了。改成点**最老**那一版（v1 的内容是稳定的）之后就稳了。真正的隔离要靠
+   每条用例自己的组织，那超出本次范围。
 
 ## 六、和骨架的接口（已经接完）
 
@@ -221,8 +232,10 @@ $ npx eslint --max-warnings=0 components/SysuTools/tools/assign services/ext/ass
 
 ## 七、本地复现环境
 
+端口自行错开（骨架占 9001/3001，我用 9005/3005）。
+
 ```sh
-# 后端：连预发栈的 Postgres/Redis（socat 已把 5432/6379 转到宿主机 15432/16379）
+# 后端：连预发栈的 Postgres/Redis（socat 转发容器 lh-db-fwd-15432 / lh-redis-fwd-16379 共用）
 cd apps/api
 cat > .env <<'EOF'
 LEARNHOUSE_SQL_CONNECTION_STRING=postgresql://learnhouse:learnhouse@127.0.0.1:15432/learnhouse
@@ -245,3 +258,7 @@ cd apps/web && bun run dev --port 3005      # .env.local 指向 http://localhost
 
 后台入口在左侧菜单「教学工具」→「作业工具」，路径 `/dash/tools/assign`。
 注意单租户模式下带 `/orgs/<slug>` 前缀的路径会 404，要走 `/dash/...`。
+
+Apple Silicon 上 `greenlet` 不在 `uv.lock` 的 marker 里（它认 `aarch64`，
+macOS 报的是 `arm64`），跑 pytest 前要 `uv pip install greenlet`，
+然后一律用 `uv run --no-sync`，**不要动 `pyproject.toml` / `uv.lock`**。

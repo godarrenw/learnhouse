@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { useOrg } from '@components/Contexts/OrgContext'
+import ExportCsvButton, { CsvColumn } from '@components/SysuTools/shared/ExportCsvButton'
 import { getAssignmentsFromACourse } from '@services/courses/assignments'
 import { createQuickQuiz, getQuizResults } from '@services/ext/assign'
 import { asArray } from '@services/utils/ts/requests'
@@ -89,6 +90,39 @@ export default function QuickQuizTab({ courseUuid }: { courseUuid?: string }) {
     placeholderData: (prev) => prev,
   })
   const results = resultsQuery.data as any
+
+  // 导出的是「一个学生一行 + 每题一列」的宽表 —— 教务拿去做统计时最省事的形状。
+  // 惰性求值：点了导出才拼，免得每次渲染都过一遍全班。
+  const csvColumns: CsvColumn<any>[] = useMemo(() => {
+    const questions = asArray<any>(results?.per_question)
+    return [
+      {
+        header: t('ext.tools.assign.quiz.student', { defaultValue: '学生' }),
+        value: (row) => row.name,
+      },
+      { header: t('ext.tools.assign.quiz.email', { defaultValue: '邮箱' }), value: (row) => row.email },
+      {
+        header: t('ext.tools.assign.quiz.status', { defaultValue: '状态' }),
+        value: (row) => row.status,
+      },
+      {
+        header: t('ext.tools.assign.quiz.score', { defaultValue: '得分率' }),
+        value: (row) => (row.score_percent === null ? '' : `${row.score_percent}%`),
+      },
+      ...questions.map((q: any, i: number) => ({
+        header: q.question,
+        value: (row: any) => {
+          const answer = asArray<any>(row.answers)[i]
+          if (!answer || answer.correct === null) {
+            return t('ext.tools.assign.quiz.csv_blank', { defaultValue: '未答/需人工' })
+          }
+          return answer.correct
+            ? t('ext.tools.assign.quiz.csv_right', { defaultValue: '对' })
+            : t('ext.tools.assign.quiz.csv_wrong', { defaultValue: '错' })
+        },
+      })),
+    ]
+  }, [results, t])
 
   function patchQuestion(qi: number, patch: (_q: DraftQuestion) => void) {
     setQuestions((prev) => {
@@ -348,13 +382,23 @@ export default function QuickQuizTab({ courseUuid }: { courseUuid?: string }) {
             />
           ) : (
             <div className="space-y-5">
-              <p className="text-xs text-gray-400">
-                {t('ext.tools.assign.quiz.submitted', {
-                  defaultValue: '{{submitted}} / {{roster}} 人已交',
-                  submitted: results.submitted_count,
-                  roster: results.roster_count,
-                })}
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-gray-400">
+                  {t('ext.tools.assign.quiz.submitted', {
+                    defaultValue: '{{submitted}} / {{roster}} 人已交',
+                    submitted: results.submitted_count,
+                    roster: results.roster_count,
+                  })}
+                </p>
+                <span data-testid="assign-quiz-export">
+                  <ExportCsvButton
+                    filename={`${results.title || 'quiz'}-results`}
+                    columns={csvColumns}
+                    rows={() => asArray<any>(results.students)}
+                    disabled={asArray<any>(results.students).length === 0}
+                  />
+                </span>
+              </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full">
