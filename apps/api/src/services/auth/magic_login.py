@@ -1,4 +1,19 @@
-"""User-facing passwordless "magic link" login.
+# ============================================================================
+# 修改声明（GNU AGPL-3.0 第 5(a) 条）
+#
+# 本文件是 LearnHouse v1.3.6 的修改版本。
+#   上游项目： https://github.com/learnhouse/learnhouse  （tag v1.3.6）
+#   修改方：   中山大学先进制造学院 · 先进智造实验室
+#   修改日期： 2026-09-08
+#   修改摘要： 登录邮件正文中文化，并将品牌名替换为部署方名称。
+#
+# 上游原始文件见本仓库 git 历史：git show 1.3.6:apps/api/src/services/auth/magic_login.py
+# 本平台整体仍以 AGPL-3.0 授权；完整的修改源码获取方式见平台页脚。
+# ============================================================================
+"""PATCH(nas): 登录邮件正文中文化，品牌名改为「先进智造学堂」。
+上游此函数虽然接收 lang 参数，但文案全部硬编码为英文，未使用该参数。
+本文件由部署方修改，其余逻辑与上游 LearnHouse 1.3.6 一致。
+User-facing passwordless "magic link" login.
 
 Distinct from the admin/integration magic link (``purpose: "magic_link"`` in
 :mod:`src.services.admin.admin`), which an API-token integration mints for a
@@ -111,24 +126,23 @@ def send_magic_login_email(
     safe_name = html.escape(user.username or user.email)
 
     body_content = f"""
-        <h1 style="{STYLES['h1']}">Sign in to LearnHouse</h1>
+        <h1 style="{STYLES['h1']}">登录先进智造学堂</h1>
         <p style="{STYLES['p']}">
-            Hi {safe_name}, click the button below to sign in. This link works
-            once and expires in 15 minutes. If you didn't request it, you can
-            safely ignore this email.
+            {safe_name} 你好，点击下方按钮即可登录。此链接仅能使用一次，15 分钟后失效。
+            如果这不是你本人的操作，忽略本邮件即可。
         </p>
-        <a href="{login_url}" style="{STYLES['button']}">Sign in</a>
+        <a href="{login_url}" style="{STYLES['button']}">立即登录</a>
         <p style="{STYLES['link_text']}">
-            Or paste this link into your browser:<br />{login_url}
+            如果按钮无法点击，请复制以下链接到浏览器打开：<br />{login_url}
         </p>
     """
     return send_email(
         to=email,
-        subject="Your LearnHouse login link",
+        subject="先进智造学堂登录链接",
         body=_email_layout(
-            title="Sign in to LearnHouse",
+            title="登录先进智造学堂",
             body_content=body_content,
-            footer_note="This link signs you in to your LearnHouse account.",
+            footer_note="此链接用于登录你的先进智造学堂账户。",
         ),
     )
 
