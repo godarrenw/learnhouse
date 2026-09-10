@@ -294,3 +294,44 @@ $ cd apps/e2e && bun run typecheck           → 0
    `course_uuid`，而课程页的路径段是不带 `course_` 前缀的，会请求到
    `course_course_xxx` 然后 404。已改成 `.replace('course_', '')`，与仓库里
    `CommunitySidebar`、`CourseProgress` 等处的写法一致。
+
+## 八、给 EXT_TOOLS.md 的补充：`require_teacher` 两种形态怎么选
+
+> team-lead 已裁定签到保留非依赖形态。这一段请集成代理并进
+> `docs/sysu-sam/EXT_TOOLS.md` 的「权限：两道门」小节末尾。
+
+`src/routers/ext/deps.py` 里同一套判定有两个入口，**判定逻辑完全相同**
+（都是查 `dashboard.action_access`），差别只在 `org_id` 从哪里来：
+
+| | `require_teacher`（依赖形态） | `verify_teacher`（服务层调用） |
+|---|---|---|
+| 用法 | `Depends(require_teacher)` | `await verify_teacher(user, org_id, db_session)` |
+| `org_id` 来源 | 调用方在 query 里传 `?org_id=` | 服务端自己从资源反查 |
+| 适合 | 接口本身不带任何资源 id，组织是唯一上下文 | 接口带 `course_uuid` / `<资源>_uuid`，能反查出组织 |
+
+**怎么选：接口路径里已经有资源 id 的，用 `verify_teacher` 从资源反查组织；
+只有拿不到资源 id 时才用依赖形态让调用方传。**
+
+理由是让调用方传 `org_id` 会多出一个必须校验的自由变量。传进来的 `org_id`
+和资源实际所属的组织未必一致，服务端还得再比一次；漏了这一比，攻击者就能拿
+自己有教师权限的组织 id 去操作别的组织的资源——正是上游注释里反复强调的那个
+跨组织 IDOR。从资源反查则不存在这个自由度：组织是资源自己说了算的。
+
+签到八个接口全部走反查：`/courses/{course_uuid}/...` 从课程取 `org_id`，
+`/sessions/{session_uuid}/...` 从会话取。两道门在
+`src/services/ext/checkin/checkin.py` 的 `rbac_check_teacher` 里连着做：
+
+```python
+await authorization_verify_if_user_is_anon(current_user.id)
+await verify_teacher(current_user, org_id, db_session)          # 组织级
+await authorization_verify_based_on_roles_and_authorship(       # 课程级
+    request, current_user.id, "update", course_uuid, db_session)
+```
+
+学生端另有一道更松的门 `rbac_check_member`：登录 + 是本组织成员即可，
+`org_id` 同样从会话或课程反查。
+
+课程级那道刻意用 `update` 而不是 `read`：公开课程的 `read` 对任何登录用户都成立，
+用 `read` 判会让学生拉到全班名单和 IP（`test_regular_user_cannot_read_records`
+就是为这个写的）。**凡是会返回名单、成绩、IP 这类他人数据的只读接口，都要按
+「能改这个资源的人」判，而不是「能看这个资源的人」。**
