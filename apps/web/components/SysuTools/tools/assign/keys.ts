@@ -8,7 +8,7 @@ export const assignKeys = {
   all: ['ext', 'assign'] as const,
   courseTree: (courseUuid: string) => ['ext', 'assign', 'tree', courseUuid] as const,
   assignments: (courseUuid: string) => ['ext', 'assign', 'assignments', courseUuid] as const,
-  models: () => ['ext', 'assign', 'models'] as const,
+  models: (orgId: number) => ['ext', 'assign', 'models', orgId] as const,
   results: (assignmentUuid: string) => ['ext', 'assign', 'results', assignmentUuid] as const,
   similarity: (assignmentUuid: string, threshold: number) =>
     ['ext', 'assign', 'similarity', assignmentUuid, threshold] as const,

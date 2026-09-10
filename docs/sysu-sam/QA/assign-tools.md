@@ -5,8 +5,12 @@
 
 ## 一、接口清单
 
-全部挂在 `/api/v1/ext/assign` 下，`require_teacher` 挡匿名与 API token，
-课程级权限由各 service 调 `check_resource_access` 收窄。
+全部挂在 `/api/v1/ext/assign` 下。权限两道门：骨架的 `deps.require_teacher` 先做组织级
+判断（Admin / Maintainer / Instructor，看 `dashboard.action_access`），课程级再由各
+service 调 `check_resource_access` 收窄。
+
+**每个接口都要带 `?org_id=<org.id>`** —— 这是 `require_teacher` 把 `org_id` 声明成
+query 参数带来的硬要求，前端的 `services/ext/assign.ts` 统一在 URL 里拼上。
 
 | 方法 | 路径 | 做什么 |
 |---|---|---|
@@ -44,16 +48,23 @@
 
 ## 三、LLM 配置
 
-走环境变量，没有改 `organization_config` 模型：
+走骨架的 `get_ext_config`，也就是「组织配置的 ext 段 → 环境变量 → 默认值」三层回退：
 
-```
-LEARNHOUSE_EXT_LLM_BASE_URL=   # OpenAI 兼容端点，形如 https://example.com/v1
-LEARNHOUSE_EXT_LLM_API_KEY=    # 只从环境变量读，代码里不写死
-LEARNHOUSE_EXT_LLM_MODEL=      # 默认模型 id，请求里可以用 model 覆盖
-```
+| ext 段的键 | 环境变量 | 是什么 |
+|---|---|---|
+| `llm_base_url` | `LEARNHOUSE_EXT_LLM_BASE_URL` | OpenAI 兼容端点，形如 `https://example.com/v1` |
+| `llm_api_key` | `LEARNHOUSE_EXT_LLM_API_KEY` | API key |
+| `llm_model` | `LEARNHOUSE_EXT_LLM_MODEL` | 默认模型 id，请求里可以用 `model` 覆盖 |
 
-键已经加进 `deploy/.env.example`（只有键名，没有值）。不填这三个键时，只有 AI 出题不可用
-（接口返回 503，前端把模型下拉禁用并给出提示），其余四个 Tab 照常。
+同一台机器上可能跑多个组织，所以组织配置能盖过环境变量，这一条有单测钉着
+（`test_org_config_overrides_env`）。
+
+**key 建议只用环境变量配。** 它虽然也能写进组织配置，但那份 JSON 会随组织配置下发到
+前端；组织配置里只放端点和模型更稳妥。三个环境变量键已经加进 `deploy/.env.example`
+（只有键名，没有值）。
+
+三者都不填时，只有 AI 出题不可用（接口返回 503，前端把模型下拉禁用并给出提示），
+其余四个 Tab 照常。
 
 请求走 `httpx.AsyncClient(trust_env=False)`，绕开系统代理 —— 端点可能在内网，
 或者本机装了会劫持出网请求的代理。
@@ -62,14 +73,17 @@ LEARNHOUSE_EXT_LLM_MODEL=      # 默认模型 id，请求里可以用 model 覆�
 
 ### 4.1 后端单测
 
-`apps/api/src/tests/ext/test_assign_tools.py`，50 条全过：
+`apps/api/src/tests/ext/test_assign_tools.py`，52 条；连骨架自己的 ext 测试一起 74 条全过：
 
 ```
 $ cd apps/api && uv run pytest src/tests/ext -q
-50 passed
+74 passed
 $ uv run ruff check src/
 All checks passed!
 ```
+
+用例不依赖开发机上的 `apps/api/.env`：AI 出题相关的用例用 `llm_configured` fixture
+显式设死端点，把 `.env` 挪走再跑一样是全过（试过）。
 
 覆盖到的行为（挑要紧的说）：
 
@@ -78,7 +92,8 @@ All checks passed!
 - AI 出题：模型说 `publish=true` 也强制改回草稿；模型多出题型会警告；
   连续两次输出解析不出 JSON 才放弃（断言真的重试了一次）；
   正文太短拒绝；内容页不属于该课程返回 400；没配模型返回 503；
-  模型自己发明的枚举值（`grading_type: MIXED` 等）被改回默认值并写进警告
+  模型自己发明的枚举值（`grading_type: MIXED` 等）被改回默认值并写进警告；
+  没配端点 / 没配模型都返回 503；组织配置的 ext 段能盖过环境变量
 - 建作业：三张表都建出来了、`publish` 覆盖生效、章节不属于课程拒绝、
   **spec 有错时一个活动都不会建**（校验在建任何东西之前完成）
 - 随堂测：默认 `ungraded=True` + `solution_reveal=ON_SUBMISSION` + `auto_grading` 被归零；
@@ -181,36 +196,28 @@ $ npx eslint --max-warnings=0 components/SysuTools/tools/assign services/ext/ass
 4. **没有加 alembic 迁移**，作业工具全部复用上游已有的表。
 5. **接入骨架的两处改动还没落进分支**，见下一节 —— 这条分支是在骨架合入
    `sysu-sam` 之前开的。
-6. **没有往 `apps/e2e` 的 playwright 套件里加 spec。** 上面 4.3 那份走查是带断言的
+6. **随堂测的结果面板没有导出 CSV。** 骨架给了 `ExportCsvButton`，接上去很便宜，
+   但需求里没写，就没加。
+7. **没有往 `apps/e2e` 的 playwright 套件里加 spec。** 上面 4.3 那份走查是带断言的
    独立脚本，能当验收跑，但它不在 `playwright test` 套件里 —— 套件的 global-setup
    会自起一套实例，而这条分支的走查依赖预发栈里的真实课程与版本历史。
    骨架合入后，`apps/e2e/features/ext/tests/` 是约定位置，把这份走查改写成
    跟着套件跑的 spec 是一件待办。
 
-## 六、rebase 之后要做的三件事
+## 六、和骨架的接口（已经接完）
 
-骨架合入 `sysu-sam`、本分支 rebase 上去之后，在仓库根目录跑：
+骨架已经合入 `sysu-sam`（`33537025`），本分支 rebase 上去后接了这四处，
+上面第四节的验证证据都是 rebase **之后**重新跑的：
 
-```sh
-python3 docs/sysu-sam/QA/assign/register.py
-```
-
-它做两件事（幂等，跑第二次不会重复插）：
-往 `apps/web/components/SysuTools/registry.ts` 的 `SYSU_TOOLS` 加一条 `assign` 条目，
-往 `apps/web/locales/ext/{zh,en}.json` 的 `tools.assign` / `search.assign` 补全文案。
-
-第三件事要手工改：
-
-- `apps/api/src/services/ext/assign_tools/auth.py` 里的 `require_teacher` 是本模块自带的
-  占位实现（拒匿名 + 拒 API token）。骨架提供统一版本后，把
-  `routers/ext/assign_tools.py` 顶部那一行 import 换成骨架的即可，其余不用动。
-- `apps/api/src/router.py` 末尾那段 `--- SYSU-SAM: 教学工具扩展路由 ---` 是临时挂载，
-  `apps/api/src/routers/ext/__init__.py` 也是临时版本。两者都以骨架的版本为准，
-  rebase 时取骨架的，只保留 `ext_router.include_router(assign_tools.router, prefix="/assign")`
-  这一行（或骨架的等价写法）。
-
-改完再跑一遍 `uv run pytest src/tests/ext -q`、`uv run ruff check src/`、
-`npx tsc --noEmit`、`bun run lint:strict`，以及 `docs/sysu-sam/QA/assign/shots.mjs`。
+1. `apps/api/src/routers/ext/__init__.py` 的 `SUBMODULES` 里加了一行
+   `("assign_tools", "/assign")`，`src/router.py` 一个字没改（临时挂载已经删掉）。
+2. `require_teacher` 换成骨架的 `src/routers/ext/deps.require_teacher`，
+   本模块原来的占位实现 `services/ext/assign_tools/auth.py` 已删。
+   连带的影响是所有接口都要带 `?org_id=`，前端 `services/ext/assign.ts` 统一拼上了。
+3. LLM 配置从「只读环境变量」换成骨架的 `get_ext_config`（组织配置 → 环境变量）。
+4. registry 与两个语言包的文案由 `docs/sysu-sam/QA/assign/register.py` 写入
+   （幂等，重复跑不会重复插）。它留在仓库里是为了万一 rebase 冲突把这两处冲掉，
+   重跑一次就能补回来。
 
 ## 七、本地复现环境
 

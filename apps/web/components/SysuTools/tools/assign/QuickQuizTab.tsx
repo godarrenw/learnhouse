@@ -12,6 +12,7 @@ import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 
 import { useLHSession } from '@components/Contexts/LHSessionContext'
+import { useOrg } from '@components/Contexts/OrgContext'
 import { getAssignmentsFromACourse } from '@services/courses/assignments'
 import { createQuickQuiz, getQuizResults } from '@services/ext/assign'
 import { asArray } from '@services/utils/ts/requests'
@@ -56,6 +57,8 @@ export default function QuickQuizTab({ courseUuid }: { courseUuid?: string }) {
   const { t } = useTranslation()
   const session = useLHSession() as any
   const access_token = session?.data?.tokens?.access_token
+  const org = useOrg() as any
+  const orgId: number = org?.id ?? 0
   const { chapters } = useCourseTree(courseUuid)
 
   const [title, setTitle] = useState('')
@@ -80,8 +83,8 @@ export default function QuickQuizTab({ courseUuid }: { courseUuid?: string }) {
 
   const resultsQuery = useQuery({
     queryKey: assignKeys.results(assignmentUuid),
-    queryFn: () => getQuizResults(assignmentUuid, access_token),
-    enabled: !!assignmentUuid && !!access_token,
+    queryFn: () => getQuizResults(orgId, assignmentUuid, access_token),
+    enabled: !!orgId && !!assignmentUuid && !!access_token,
     staleTime: 15_000,
     placeholderData: (prev) => prev,
   })
@@ -123,6 +126,7 @@ export default function QuickQuizTab({ courseUuid }: { courseUuid?: string }) {
       t('ext.tools.assign.quiz.creating', { defaultValue: '正在建随堂测…' })
     )
     const res = await createQuickQuiz(
+      orgId,
       courseUuid,
       Number(chapterId),
       { title: title.trim(), questions: clean, formative, publish },

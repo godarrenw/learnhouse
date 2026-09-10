@@ -1,20 +1,27 @@
 """AI 出题用的 OpenAI 兼容接口客户端。
 
-配置走环境变量（改 organization_config 模型太重，见 PHASE3_BRIEF 的取舍）：
+配置走骨架的 `get_ext_config`，也就是「组织配置的 ext 段 → 环境变量 → 默认值」：
 
-- `LEARNHOUSE_EXT_LLM_BASE_URL`  端点，形如 `https://example.com/v1`
-- `LEARNHOUSE_EXT_LLM_API_KEY`   API key，**只从环境变量读，代码里不写死**
-- `LEARNHOUSE_EXT_LLM_MODEL`     默认模型 id，请求里可以用 `model` 覆盖
+| ext 段的键 | 环境变量 | 是什么 |
+|---|---|---|
+| `llm_base_url` | `LEARNHOUSE_EXT_LLM_BASE_URL` | 端点，形如 `https://example.com/v1` |
+| `llm_api_key` | `LEARNHOUSE_EXT_LLM_API_KEY` | API key |
+| `llm_model` | `LEARNHOUSE_EXT_LLM_MODEL` | 默认模型 id，请求里可以用 `model` 覆盖 |
+
+**key 不写死在代码里。** 它虽然能写进组织配置，但那份 JSON 会随组织配置下发到
+前端，所以生产上建议只用环境变量配 key，组织配置里只放端点和模型。
 
 整个模块对外只有 `chat_completion` 和 `list_models` 两个联网入口，
 测试里只需要 monkeypatch 这两个点。
 """
 
 import json
-import os
 import re
 
 import httpx
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.services.ext.config import get_ext_config
 
 from .spec import SpecError
 
@@ -25,25 +32,29 @@ class LLMNotConfiguredError(SpecError):
     """没配 LLM 端点。是配置问题不是代码问题，单独一个类型方便路由回 503。"""
 
 
-def llm_config() -> dict:
-    """读环境变量里的 LLM 配置。"""
-    base = (os.environ.get("LEARNHOUSE_EXT_LLM_BASE_URL") or "").strip().rstrip("/")
+async def llm_config(db_session: AsyncSession, org_id: int) -> dict:
+    """读这个组织的 LLM 配置：组织配置的 ext 段 → 环境变量 → 空。"""
+
+    async def _get(key: str, env: str) -> str:
+        value = await get_ext_config(db_session, org_id, key=key, env_var=env, default="")
+        return str(value or "").strip()
+
     return {
-        "base": base,
-        "key": (os.environ.get("LEARNHOUSE_EXT_LLM_API_KEY") or "").strip(),
-        "model": (os.environ.get("LEARNHOUSE_EXT_LLM_MODEL") or "").strip(),
+        "base": (await _get("llm_base_url", "LEARNHOUSE_EXT_LLM_BASE_URL")).rstrip("/"),
+        "key": await _get("llm_api_key", "LEARNHOUSE_EXT_LLM_API_KEY"),
+        "model": await _get("llm_model", "LEARNHOUSE_EXT_LLM_MODEL"),
     }
 
 
-def _require_config() -> dict:
-    c = llm_config()
-    if not c["base"]:
+def require_configured(cfg: dict) -> dict:
+    """没配端点就抛 LLMNotConfiguredError（路由会翻成 503）。"""
+    if not cfg.get("base"):
         raise LLMNotConfiguredError(
-            "没有配置 AI 出题的大模型端点。请在部署环境里设置 "
-            "LEARNHOUSE_EXT_LLM_BASE_URL（以及 LEARNHOUSE_EXT_LLM_API_KEY、"
-            "LEARNHOUSE_EXT_LLM_MODEL）后重启后端。"
+            "没有配置 AI 出题的大模型端点。请在组织设置的 ext 段填 llm_base_url / "
+            "llm_model，或在部署环境里设置 LEARNHOUSE_EXT_LLM_BASE_URL、"
+            "LEARNHOUSE_EXT_LLM_API_KEY、LEARNHOUSE_EXT_LLM_MODEL 后重启后端。"
         )
-    return c
+    return cfg
 
 
 def _headers(key: str) -> dict:
@@ -59,9 +70,9 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=TIMEOUT_SECONDS, trust_env=False)
 
 
-async def list_models() -> dict:
+async def list_models(cfg: dict) -> dict:
     """列出端点上可用的模型 id。"""
-    c = _require_config()
+    c = require_configured(cfg)
     async with _client() as client:
         try:
             resp = await client.get(c["base"] + "/models", headers=_headers(c["key"]))
@@ -76,9 +87,11 @@ async def list_models() -> dict:
     return {"base": c["base"], "models": ids, "configured_model": c["model"] or None}
 
 
-async def chat_completion(model: str, messages: list[dict], temperature: float = 0.3) -> str:
+async def chat_completion(
+    cfg: dict, model: str, messages: list[dict], temperature: float = 0.3
+) -> str:
     """调一次 chat/completions，返回助手消息的文本内容。"""
-    c = _require_config()
+    c = require_configured(cfg)
     payload = {"model": model, "messages": messages, "temperature": temperature}
     async with _client() as client:
         try:

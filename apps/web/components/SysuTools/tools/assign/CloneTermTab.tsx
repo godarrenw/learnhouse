@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 
 import ConfirmationModal from '@components/Objects/StyledElements/ConfirmationModal/ConfirmationModal'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
+import { useOrg } from '@components/Contexts/OrgContext'
 import { cloneTerm, shiftDue } from '@services/ext/assign'
 import { asArray } from '@services/utils/ts/requests'
 
@@ -25,6 +26,8 @@ export default function CloneTermTab({ courseUuid }: { courseUuid?: string }) {
   const { t } = useTranslation()
   const session = useLHSession() as any
   const access_token = session?.data?.tokens?.access_token
+  const org = useOrg() as any
+  const orgId: number = org?.id ?? 0
   const queryClient = useQueryClient()
 
   const [step, setStep] = useState<Step>(1)
@@ -54,7 +57,7 @@ export default function CloneTermTab({ courseUuid }: { courseUuid?: string }) {
   async function handlePreview() {
     if (!courseUuid) return
     setBusy(true)
-    const res = await cloneTerm(courseUuid, cloneBody(false), access_token)
+    const res = await cloneTerm(orgId, courseUuid, cloneBody(false), access_token)
     setBusy(false)
     if (!res.success) {
       toast.error(res.data?.detail || t('ext.common.error', { defaultValue: '加载失败' }))
@@ -69,7 +72,7 @@ export default function CloneTermTab({ courseUuid }: { courseUuid?: string }) {
     const toastId = toast.loading(
       t('ext.tools.assign.clone.cloning', { defaultValue: '正在复制课程，可能要一会儿…' })
     )
-    const res = await cloneTerm(courseUuid, cloneBody(true), access_token)
+    const res = await cloneTerm(orgId, courseUuid, cloneBody(true), access_token)
     if (!res.success) {
       toast.error(
         res.data?.detail || t('ext.tools.assign.clone.error', { defaultValue: '复制失败' }),
@@ -93,6 +96,7 @@ export default function CloneTermTab({ courseUuid }: { courseUuid?: string }) {
     if (!courseUuid) return
     setBusy(true)
     const res = await shiftDue(
+      orgId,
       courseUuid,
       { days: bulkDays, only_future: onlyFuture, confirm: false },
       access_token
@@ -111,6 +115,7 @@ export default function CloneTermTab({ courseUuid }: { courseUuid?: string }) {
       t('ext.tools.assign.shift.applying', { defaultValue: '正在顺延…' })
     )
     const res = await shiftDue(
+      orgId,
       courseUuid,
       { days: bulkDays, only_future: onlyFuture, confirm: true },
       access_token

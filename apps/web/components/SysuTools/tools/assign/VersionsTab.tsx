@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 
 import ConfirmationModal from '@components/Objects/StyledElements/ConfirmationModal/ConfirmationModal'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
+import { useOrg } from '@components/Contexts/OrgContext'
 import { getVersionDiff, getVersions, restoreVersion } from '@services/ext/assign'
 import { asArray } from '@services/utils/ts/requests'
 import { cn } from '@/lib/utils'
@@ -25,6 +26,8 @@ export default function VersionsTab({ courseUuid }: { courseUuid?: string }) {
   const { t } = useTranslation()
   const session = useLHSession() as any
   const access_token = session?.data?.tokens?.access_token
+  const org = useOrg() as any
+  const orgId: number = org?.id ?? 0
   const queryClient = useQueryClient()
   const { pages } = useCourseTree(courseUuid)
 
@@ -40,8 +43,8 @@ export default function VersionsTab({ courseUuid }: { courseUuid?: string }) {
 
   const versionsQuery = useQuery({
     queryKey: assignKeys.versions(activityUuid),
-    queryFn: () => getVersions(activityUuid, access_token),
-    enabled: !!activityUuid && !!access_token,
+    queryFn: () => getVersions(orgId, activityUuid, access_token),
+    enabled: !!orgId && !!activityUuid && !!access_token,
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   })
@@ -50,8 +53,8 @@ export default function VersionsTab({ courseUuid }: { courseUuid?: string }) {
 
   const diffQuery = useQuery({
     queryKey: assignKeys.diff(activityUuid, selected, null),
-    queryFn: () => getVersionDiff(activityUuid, selected, null, access_token),
-    enabled: !!activityUuid && selected !== null && !!access_token,
+    queryFn: () => getVersionDiff(orgId, activityUuid, selected, null, access_token),
+    enabled: !!orgId && !!activityUuid && selected !== null && !!access_token,
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   })
@@ -62,7 +65,7 @@ export default function VersionsTab({ courseUuid }: { courseUuid?: string }) {
     const toastId = toast.loading(
       t('ext.tools.assign.ver.restoring', { defaultValue: '正在回滚…' })
     )
-    const res = await restoreVersion(activityUuid, selected, true, access_token)
+    const res = await restoreVersion(orgId, activityUuid, selected, true, access_token)
     if (!res.success) {
       toast.error(
         res.data?.detail || t('ext.tools.assign.ver.error', { defaultValue: '回滚失败' }),
