@@ -95,6 +95,7 @@
 | `DataTable` | 表格。骨架屏 / 空态 / 刷新遮罩三态内置 |
 | `ExportCsvButton` | 导出 CSV，自带 UTF-8 BOM（不加的话 Excel 打开中文列名乱码） |
 | `ConfirmDanger` | 危险操作确认，包的是上游 `ConfirmationModal` |
+| `getExtConfig` | 读组织配置的 ext 段，见下一节 |
 
 `DataTable` 用法：
 
@@ -116,6 +117,60 @@ const columns: DataTableColumn<Row>[] = [
 ```
 
 `cell` 返回 `null` / `undefined` / `''` 会自动画成灰色的「—」，不用自己判空。
+
+`header` 的类型是 `React.ReactNode`，可以塞徽标之类的东西。要可点排序的表头，
+传 `onHeaderClick` 和 `sortDirection`，箭头图标（ArrowUp / ArrowDown）和
+`cursor-pointer select-none hover:text-gray-700` 由 DataTable 自己加，
+`aria-sort` 也会一并设好，不用手拼：
+
+```tsx
+{
+  key: 'score',
+  header: t('ext.tools.gradebook.score'),
+  cell: (r) => r.score,
+  onHeaderClick: () => toggleSort('score'),
+  sortDirection: sortKey === 'score' ? sortDir : null,
+}
+```
+
+### 组织级配置（ext 段）
+
+需要给管理员配的东西（虚拟助教页面地址、AI 接口地址……）放**组织配置 JSON 的
+`ext` 段**，也就是 `OrganizationConfig.config["ext"][<key>]`。这块是自由 dict，
+上游不认识它，不会被上游的配置校验或迁移动到。
+
+后端三层回退：
+
+```python
+from src.services.ext.config import get_ext_config
+
+url = await get_ext_config(
+    db_session, org_id,
+    key="avatar_page_url",
+    env_var="LEARNHOUSE_EXT_AVATAR_PAGE_URL",   # 可选
+    default="",
+)
+```
+
+顺序固定：**组织配置的 ext 段 → 环境变量 → 默认值**。同一台机器可能跑多个组织，
+组织级设置必须能盖过环境变量；环境变量是「这台部署统一这么配」的兜底。
+
+前端：
+
+```ts
+import { getExtConfig } from '@components/SysuTools/shared'
+const org = useOrg() as any
+const avatarUrl = getExtConfig(org, 'avatar_page_url', '')
+```
+
+前端读不到环境变量，只有两级（组织配置 → fallback）。**凡是前端也要用的配置，
+都必须写进组织配置的 ext 段**，别只设环境变量。
+
+两个边界都测了（`src/tests/ext/test_config.py`）：空字符串算「没配」会继续回退
+（管理员清空输入框的语义就是恢复默认），但 `False` 和 `0` 是有效取值，不会被
+当成没配。
+
+环境变量命名统一 `LEARNHOUSE_EXT_<KEY 大写>`。
 
 ### i18n
 
@@ -253,6 +308,36 @@ uv run ruff check src/routers/ext src/services/ext src/tests/ext
 > arm64 macOS，不装它所有异步 DB 测试都会 `ValueError: the greenlet library is
 > required`。修法是 `uv pip install greenlet`（只装进 venv，**不要**改 pyproject
 > 或 uv.lock，CI 跑的是 linux x86_64 不受影响）。
+
+### Lint 验收标准
+
+`sysu-sam` 基线上 `bun run lint:strict` 本来就有 **35 个上游 error**
+（`no-undef` 的 React、Analytics 的 `Cannot create components during render` 等），
+它们不是你造成的，也不该由你顺手去修。
+
+所以验收标准是两条，不是「零 error」：
+
+1. **你的新目录 0 error** —— 按路径过滤确认：
+
+   ```sh
+   bun run lint:strict 2>&1 | grep error | grep "SysuTools\|dash/tools\|services/ext"
+   ```
+
+2. **全仓 error 计数不高于基线**（35）—— 看结尾那行 `✖ N problems (M errors, …)`，
+   M 不能变大。
+
+warning 不计入（`lint:strict` 没有 `--max-warnings`，warning 不会让它失败），
+但新代码尽量别新增。
+
+**类型检查也要跑**，`lint:strict` 只是 eslint，不做类型检查：
+
+```sh
+cd apps/web && bunx tsc --noEmit -p .     # 必须 exit 0
+cd apps/e2e && bun run typecheck          # 必须 exit 0
+```
+
+这条不能省：push 到 `sysu-sam` 会触发 `build-image.yml`，Dockerfile 里的
+`next build` 会跑 tsc，一个类型错误就是全组的镜像构建挂掉。
 
 ### 前端 e2e
 

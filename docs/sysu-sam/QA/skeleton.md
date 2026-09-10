@@ -12,10 +12,10 @@
 
 | 项 | 命令 | 结果 |
 | --- | --- | --- |
-| 后端单测 | `uv run pytest src/tests/ext/ -q` | 12 passed |
+| 后端单测 | `uv run pytest src/tests/ext/ -q` | 22 passed |
 | 上游路由回归 | `uv run pytest src/tests/test_root_router.py src/tests/test_router_saas_mount.py src/tests/test_app_lifespan.py -q` | 6 passed |
 | 后端 lint | `uv run ruff check src/routers/ext src/services/ext src/tests/ext src/router.py` | All checks passed |
-| 前端 lint | `bun run lint:strict` | 35 error，全部是基线上游既有；新代码 0 error |
+| 前端 lint | `bun run lint:strict` | 35 error（与基线持平，全部上游既有）；新代码 0 error |
 | 前端类型检查 | `bunx tsc --noEmit -p .`（apps/web） | 通过，exit 0 |
 | e2e 类型检查 | `bun run typecheck`（apps/e2e） | 通过，exit 0 |
 | e2e | `bun run test features/ext` | 6 passed |
@@ -102,3 +102,21 @@
 - **深色模式未做**，按 UI_GUIDE 2.5 的结论这是有意的。
 - 本机 Apple Silicon 需要 `uv pip install greenlet` 才能跑异步 DB 测试，
   详见 `docs/sysu-sam/EXT_TOOLS.md`。这是环境问题，`uv.lock` 未改。
+
+## 合入后的增补（同日）
+
+按其他代理的需求补了两处，已一并合入：
+
+- `DataTableColumn.header` 从 `string` 放宽成 `React.ReactNode`，并加了
+  `onHeaderClick` 与 `sortDirection`：传了就自动画 ArrowUp / ArrowDown、加
+  `cursor-pointer select-none hover:text-gray-700` 并设好 `aria-sort`
+  （学情工具的成绩册与学习进度要可点排序的表头，UI_GUIDE 3.4 的要求）。
+  纯放宽，不破坏任何现有调用。
+- 组织级配置的统一读取：约定部署方的配置放组织配置 JSON 的 `ext` 段。
+  后端 `src/services/ext/config.py` 的 `get_ext_config`（组织配置 → 环境变量 →
+  默认值），前端 `getExtConfig(org, key, fallback)`（前端读不到环境变量，只有两级）。
+  内容工具的虚拟助教地址、作业工具的 AI 接口配置都走它。
+  边界行为有测试：空字符串算「没配」继续回退，`False` / `0` 是有效取值。
+
+`EXT_TOOLS.md` 同步补了 Lint 验收标准一节（新目录 0 error + 全仓 error 不高于
+基线 35，另外必须跑 tsc，因为 push 会触发镜像构建里的 `next build`）。

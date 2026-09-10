@@ -6,7 +6,7 @@
  * 三态（骨架屏 / 空态 / 翻页遮罩）已经内置，各工具不用重复写。
  */
 import React from 'react'
-import { Inbox } from 'lucide-react'
+import { ArrowDown, ArrowUp, Inbox } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import LearnHouseSpinner from '@components/Objects/Loaders/LearnHouseSpinner'
@@ -14,14 +14,24 @@ import { cn } from '@/lib/utils'
 
 export interface DataTableColumn<T> {
   key: string
-  /** 表头文案，已经 t() 过。 */
-  header: string
+  /** 表头内容，已经 t() 过。给 ReactNode 是为了能塞徽标之类的东西。 */
+  header: React.ReactNode
   /** 单元格渲染。返回 undefined / null 会自动画成灰色的「—」。 */
   cell: (_row: T) => React.ReactNode
   /** 靠右对齐（操作列常用）。 */
   align?: 'start' | 'end'
   /** 表头额外 class。 */
   className?: string
+  /**
+   * 点表头排序。传了它，表头就变成可点的，并按 `sortDirection` 自动画
+   * ArrowUp / ArrowDown（UI_GUIDE 3.4 的要求），不用自己拼图标。
+   */
+  onHeaderClick?: () => void
+  /**
+   * 当前这一列的排序方向。`null` / 不传 = 未按此列排序，只在 hover 时
+   * 淡淡地提示可点。只有配合 `onHeaderClick` 才有意义。
+   */
+  sortDirection?: 'asc' | 'desc' | null
 }
 
 interface DataTableProps<T> {
@@ -106,18 +116,45 @@ export default function DataTable<T>({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      className={cn(
-                        'text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3',
-                        col.align === 'end' ? 'text-end' : 'text-start',
-                        col.className
-                      )}
-                    >
-                      {col.header}
-                    </th>
-                  ))}
+                  {columns.map((col) => {
+                    const sortable = !!col.onHeaderClick
+                    return (
+                      <th
+                        key={col.key}
+                        aria-sort={
+                          !sortable
+                            ? undefined
+                            : col.sortDirection === 'asc'
+                              ? 'ascending'
+                              : col.sortDirection === 'desc'
+                                ? 'descending'
+                                : 'none'
+                        }
+                        onClick={col.onHeaderClick}
+                        className={cn(
+                          'text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-3',
+                          col.align === 'end' ? 'text-end' : 'text-start',
+                          sortable && 'cursor-pointer select-none hover:text-gray-700 transition-colors',
+                          col.className
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1',
+                            col.align === 'end' && 'flex-row-reverse'
+                          )}
+                        >
+                          {col.header}
+                          {sortable && col.sortDirection === 'asc' ? (
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          ) : null}
+                          {sortable && col.sortDirection === 'desc' ? (
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          ) : null}
+                        </span>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
