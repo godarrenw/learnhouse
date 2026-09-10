@@ -51,7 +51,11 @@ next.config.original.js
 public/runtime-config.js
 runtime-config.json
 
-# --- SYSU-SAM: next dev 每次启动都会重新生成这两个文件，别让它们污染工作区 ---
+# --- SYSU-SAM: 工具生成的产物，别让它们污染工作区 ---
+# next dev 每次启动都会重新生成这两个：
 /AGENTS.md
 /CLAUDE.md
+# playwright 的运行产物：
+/test-results/
+/playwright-report/
 # --- /SYSU-SAM ---

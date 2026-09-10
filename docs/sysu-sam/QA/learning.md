@@ -168,3 +168,51 @@ apps/web  bun run dev --port 3003
    rebase 后 pytest / ruff / bun test / tsc / lint / playwright 全部重跑通过。
 7. **`/dash/tools/**` 在单组织模式下的路径是 `/dash/tools/<key>`**，不是
    `/orgs/<slug>/dash/tools/<key>`。端到端用例用 `LH_E2E_ORG_SLUG` 兼容两种部署模式。
+
+---
+
+## 集成时的改动（集成代理，2026-09-10）
+
+合入 sysu-sam 时做了三处调整，都不影响功能：
+
+**1. e2e 迁到 `apps/e2e/features/ext/tests/02-learning.spec.ts`。**
+原来在 `apps/web/tests/ext/` 下自带一套 playwright 配置，但 `@playwright/test`
+不是 apps/web 的依赖，只能靠 `bunx playwright` 临时拉包跑；实测在干净环境下
+临时包解析不到配置里的 import，直接 `MODULE_NOT_FOUND`，等于这条 e2e 跑不起来。
+迁到 apps/e2e 之后复用那边已有的基建：会话由 global-setup 登录一次存成
+storageState、onboarding 遮罩由 fixtures 预置、版本钉在 @playwright/test 1.49.1，
+也不再需要 `@ts-nocheck`。用例内容一字未改，只换了登录与 onboarding 的来路。
+
+**2. 三个不该进仓库的文件已移除**：`apps/web/AGENTS.md`、`apps/web/CLAUDE.md`
+（`next dev` 每次启动都会重新生成）、`apps/web/test-results/.last-run.json`
+（playwright 运行产物）。骨架的 .gitignore 本来就挡了前两个，但对已跟踪的文件
+无效，所以要 `git rm --cached`。同时把 `/test-results/` 和 `/playwright-report/`
+补进 .gitignore。
+
+**3. `GET /ext/learning/recent` 接上了前端入口**（lead 指定的集成范围内改动）。
+教学工具概览页顶部新增「最近学习动态」卡片，组织级、不用选课，列最近 7 天最多
+8 条学习事件。数据取不到时整块不渲染（学情工具没装、或当前角色 403），
+不影响下面的工具网格。对应 e2e 是第 9 条，截图 `09-overview-recent.png`。
+
+### 集成验证结果
+
+| 项 | 结果 |
+| --- | --- |
+| 后端 pytest ext | 48 passed |
+| 后端 ruff | All checks passed |
+| 前端 tsc | exit 0 |
+| e2e tsc | exit 0 |
+| 前端 lint | 35 error，与基线持平；ext 新目录 0 |
+| e2e | 9 passed（骨架 6 + 学情 3） |
+
+验证环境：本地预发栈，后端 :9008、前端 :3008（避开其他代理占用的 9001-9007 / 3001-3007）。
+
+### 给后续代理的提醒
+
+跑 `bunx tsc --noEmit -p .` 之前，`apps/web/next-env.d.ts` 必须存在。它是 next 生成的
+且被 gitignore，干净 checkout 上没有，缺了会报 23 个 `TS2307: Cannot find module
+'public/xxx.png'` 的假错误，全在上游文件里。跑过一次 `next dev` 或 `next build`
+就会有；也可以手工建，内容就是两行 `/// <reference types="next" />` 和
+`/// <reference types="next/image-types/global" />`。镜像构建里 `next build`
+自己会生成，所以 CI 不受影响。
+

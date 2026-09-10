@@ -15,6 +15,7 @@ import { useOrg } from '@components/Contexts/OrgContext'
 import { getUriWithOrg } from '@services/config/config'
 
 import { visibleToolCards } from '../../registry'
+import RecentActivityCard from './RecentActivityCard'
 
 export default function ToolsOverview() {
   const { t } = useTranslation()
@@ -41,7 +42,9 @@ export default function ToolsOverview() {
   }
 
   return (
-    <div className="px-4 sm:px-10 pb-10">
+    <div className="px-4 sm:px-10 pb-10 space-y-4">
+      {/* 组织级的最近学习动态。数据取不到时整块不渲染，不影响下面的工具网格。 */}
+      <RecentActivityCard />
       <div
         className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 max-w-[1600px] mx-auto"
         data-testid="sysu-tools-grid"

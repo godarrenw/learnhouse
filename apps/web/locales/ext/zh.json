@@ -7,7 +7,12 @@
     "subtitle": "选择一个工具开始",
     "empty": "还没有可用的教学工具",
     "enter": "进入",
-    "tab": "全部工具"
+    "tab": "全部工具",
+    "recent": {
+      "title": "最近学习动态",
+      "summary": "近 {{days}} 天 {{learners}} 人在学",
+      "someone": "某位学员"
+    }
   },
   "search": {
     "overview": {

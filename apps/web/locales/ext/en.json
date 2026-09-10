@@ -7,7 +7,12 @@
     "subtitle": "Pick a tool to get started",
     "empty": "No teaching tools available yet",
     "enter": "Open",
-    "tab": "All tools"
+    "tab": "All tools",
+    "recent": {
+      "title": "Recent learning activity",
+      "summary": "{{learners}} learners in the last {{days}} days",
+      "someone": "A learner"
+    }
   },
   "search": {
     "overview": {

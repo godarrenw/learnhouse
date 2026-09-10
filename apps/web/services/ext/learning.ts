@@ -92,3 +92,8 @@ export function fixPublish(courseUuid: string, orgId: number, token: string) {
     token
   )
 }
+
+/** 组织级的最近学习动态。概览页的小卡片用，不需要选课。 */
+export function getRecent(orgId: number, token: string, days = 7, limit = 20) {
+  return apiFetch(`${base()}/recent?org_id=${orgId}&days=${days}&limit=${limit}`, token)
+}

@@ -128,6 +128,9 @@ export const queryKeys = {
       student: (courseUuid: string, student: string) =>
         ['ext', 'learning', 'progress', courseUuid, student] as const,
       lint: (courseUuid: string) => ['ext', 'learning', 'lint', courseUuid] as const,
+      // 组织级，不按课程分；概览页的「最近学习动态」卡片用
+      recent: (orgId: number, days: number) =>
+        ['ext', 'learning', 'recent', orgId, days] as const,
     },
   },
   /* --- /SYSU-SAM --- */
