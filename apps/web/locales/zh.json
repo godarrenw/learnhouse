@@ -48,7 +48,7 @@
       "discord": "Discord",
       "report_feedback": "报告问题或反馈",
       "feedback_title": "发送反馈",
-      "feedback_description": "通过分享您的想法、报告错误或建议新功能来帮助我们改进 LearnHouse。",
+      "feedback_description": "通过分享您的想法、报告错误或建议新功能来帮助我们改进本平台。",
       "feedback_placeholder": "告诉我们您的想法...",
       "feedback_success": "感谢您的反馈！",
       "send_feedback": "发送反馈",
@@ -215,7 +215,7 @@
     "organizations": "组织",
     "billing": "账单",
     "create_organization": "创建组织",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} 先进智造学堂 · 基于 LearnHouse 构建（AGPL-3.0）",
     "delete_organization_error": "无法删除此组织。请重试。",
     "org_actions": "组织操作",
     "manage_upgrade": "管理 / 升级",
@@ -352,17 +352,17 @@
     "try_again_in": "{{minutes}}分钟后重试",
     "error_generic": "出现问题，请重试。",
     "sign_in": "登录",
-    "terms_text": "继续即表示你同意 LearnHouse 的",
+    "terms_text": "继续即表示你同意本平台的",
     "terms_of_service": "服务条款",
     "and": "和",
     "privacy_policy": "隐私政策",
     "image_title_forgot": "重置你的密码。",
     "image_subtitle_forgot": "我们会帮你快速重新登录账户。",
-    "image_title_login": "欢迎回到 LearnHouse。",
+    "image_title_login": "欢迎回到先进智造学堂。",
     "image_subtitle_login": "从上次离开的地方继续 — 你的课程、学员和工具都在等你。",
     "image_title_reset": "马上就好。",
     "image_subtitle_reset": "设置一个强密码以保护你的账户安全。",
-    "image_title_signup": "用 LearnHouse 开始教学。",
+    "image_title_signup": "用先进智造学堂开始教学。",
     "image_subtitle_signup": "创建你的账户，几分钟内发布你的第一门课程。",
     "image_title_verify": "验证你的邮箱。",
     "image_subtitle_verify": "一步即可保护账户安全并开始使用。",
@@ -4845,7 +4845,7 @@
       }
     },
     "welcome": {
-      "title": "欢迎来到 LearnHouse",
+      "title": "欢迎来到先进智造学堂",
       "subtitle": "创建课程、邀请学员，与世界分享知识。",
       "get_started": "开始",
       "features_title": "您需要的一切",
@@ -5145,7 +5145,7 @@
   "embed": {
     "not_supported_description": "此类活动需要认证，无法嵌入。",
     "not_supported_title": "不支持此活动",
-    "powered_by": "由 LearnHouse 提供支持",
+    "powered_by": "由先进智造学堂提供支持",
     "visit_activity": "访问活动页面"
   },
   "migration": {
@@ -5658,7 +5658,7 @@
         "title": "想先试用一下？",
         "body": "前往",
         "link": "开发者页面",
-        "suffix": "来体验 LearnHouse。"
+        "suffix": "来体验先进智造学堂。"
       },
       "validation": {
         "required": "必填",
