@@ -53,6 +53,13 @@ async def list_versions(
 ) -> dict:
     """版本列表，外加当前版本号 —— 前端要靠它把「当前」标出来。"""
     activity, course = await _activity_or_404(activity_uuid, db_session)
+    # 版本历史里有未发布的草稿内容，按「能改这门课的人」判而不是「能看的人」：
+    # 公开课程的 read 对任何登录用户都成立，用 read 判等于把老师的草稿历史
+    # 开放给选课的学生。上游 get_activity_versions 内部那道 read 留着无妨，
+    # 更严的这道先过。见 docs/sysu-sam/EXT_TOOLS.md「权限：两道门」。
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
     versions = await get_activity_versions(
         request, activity_uuid, current_user, db_session, limit=limit, offset=0
     )
@@ -102,6 +109,13 @@ async def version_markdown(
 ) -> dict:
     """把某个版本的内容渲染成 Markdown 给前端预览。"""
     activity, course = await _activity_or_404(activity_uuid, db_session)
+    # 版本历史里有未发布的草稿内容，按「能改这门课的人」判而不是「能看的人」：
+    # 公开课程的 read 对任何登录用户都成立，用 read 判等于把老师的草稿历史
+    # 开放给选课的学生。上游 get_activity_versions 内部那道 read 留着无妨，
+    # 更严的这道先过。见 docs/sysu-sam/EXT_TOOLS.md「权限：两道门」。
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
     markdown, label = await _markdown_of(
         request, activity, version_number, current_user, db_session
     )
@@ -128,6 +142,13 @@ async def diff_versions(
     结构噪音，老师看不出改了哪句话。
     """
     activity, course = await _activity_or_404(activity_uuid, db_session)
+    # 版本历史里有未发布的草稿内容，按「能改这门课的人」判而不是「能看的人」：
+    # 公开课程的 read 对任何登录用户都成立，用 read 判等于把老师的草稿历史
+    # 开放给选课的学生。上游 get_activity_versions 内部那道 read 留着无妨，
+    # 更严的这道先过。见 docs/sysu-sam/EXT_TOOLS.md「权限：两道门」。
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
     text_a, label_a = await _markdown_of(request, activity, a, current_user, db_session)
     text_b, label_b = await _markdown_of(request, activity, b, current_user, db_session)
 
@@ -165,9 +186,10 @@ async def restore(
     activity, course = await _activity_or_404(activity_uuid, db_session)
 
     if not confirm:
-        # 摘要也要走一遍读权限，否则未授权的人能靠它探到内容长度
+        # 摘要也要走一遍权限，否则未授权的人能靠它探到内容长度。
+        # 和上面三个只读接口同一口径：判 update 不判 read —— 它返回的是完整 diff。
         await check_resource_access(
-            request, db_session, current_user, course.course_uuid, AccessAction.READ
+            request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
         )
         preview = await diff_versions(
             request, activity_uuid, None, version_number, current_user, db_session

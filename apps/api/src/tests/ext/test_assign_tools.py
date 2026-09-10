@@ -33,6 +33,7 @@ from src.services.ext.assign_tools import draft as draft_svc
 from src.services.ext.assign_tools import llm as llm_mod
 from src.services.ext.assign_tools import quickquiz as quiz_svc
 from src.services.ext.assign_tools import similarity as sim_svc
+from src.security.rbac import AccessAction
 from src.services.ext.assign_tools import versions as ver_svc
 from src.services.ext.assign_tools.create import create_from_spec
 from src.services.ext.assign_tools.spec import (
@@ -1134,3 +1135,79 @@ async def test_versions_404(db, org, course, admin_user, mock_request, bypass_ex
     with pytest.raises(HTTPException) as e:
         await ver_svc.list_versions(mock_request, "activity_nope", admin_user, db)
     assert e.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 版本回滚的权限口径（集成时收紧，见 EXT_TOOLS.md「权限：两道门」）
+#
+# 上面那些用例都挂 bypass_ext_rbac，验的是业务逻辑；这一组**不绕过**，
+# 专门钉住「课程级判的是 update 不是 read」。会退回 read 的改动都会在这里红。
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def spy_ext_rbac():
+    """记下 versions.py 每次 check_resource_access 用的 action。"""
+    calls = []
+
+    async def _spy(request, db_session, current_user, course_uuid, action):
+        calls.append(action)
+
+    with patch("src.services.ext.assign_tools.versions.check_resource_access", new=_spy):
+        yield calls
+
+
+async def test_list_versions_requires_update_not_read(
+    db, org, course, versioned_page, admin_user, mock_request, spy_ext_rbac, bypass_usage,
+):
+    """版本历史含未发布草稿，公开课程的 read 对任何登录用户都成立，必须判 update。"""
+    with patch(
+        "src.services.courses.activities.versioning.check_resource_access",
+        new_callable=AsyncMock,
+    ):
+        await ver_svc.list_versions(mock_request, versioned_page.activity_uuid, admin_user, db)
+    assert AccessAction.UPDATE in spy_ext_rbac
+    assert AccessAction.READ not in spy_ext_rbac
+
+
+async def test_version_markdown_requires_update_not_read(
+    db, org, course, versioned_page, admin_user, mock_request, spy_ext_rbac, bypass_usage,
+):
+    with patch(
+        "src.services.courses.activities.versioning.check_resource_access",
+        new_callable=AsyncMock,
+    ):
+        await ver_svc.version_markdown(
+            mock_request, versioned_page.activity_uuid, 1, admin_user, db
+        )
+    assert AccessAction.UPDATE in spy_ext_rbac
+    assert AccessAction.READ not in spy_ext_rbac
+
+
+async def test_diff_versions_requires_update_not_read(
+    db, org, course, versioned_page, admin_user, mock_request, spy_ext_rbac, bypass_usage,
+):
+    with patch(
+        "src.services.courses.activities.versioning.check_resource_access",
+        new_callable=AsyncMock,
+    ):
+        await ver_svc.diff_versions(
+            mock_request, versioned_page.activity_uuid, 1, 2, admin_user, db
+        )
+    assert AccessAction.UPDATE in spy_ext_rbac
+    assert AccessAction.READ not in spy_ext_rbac
+
+
+async def test_restore_preview_requires_update_not_read(
+    db, org, course, versioned_page, admin_user, mock_request, spy_ext_rbac, bypass_usage,
+):
+    """confirm=False 的预览返回完整 diff，和三个只读接口同一口径。"""
+    with patch(
+        "src.services.courses.activities.versioning.check_resource_access",
+        new_callable=AsyncMock,
+    ):
+        out = await ver_svc.restore(
+            mock_request, versioned_page.activity_uuid, 1, admin_user, db, confirm=False
+        )
+    assert out["confirmed"] is False
+    assert AccessAction.UPDATE in spy_ext_rbac
+    assert AccessAction.READ not in spy_ext_rbac

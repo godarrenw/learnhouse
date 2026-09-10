@@ -262,3 +262,56 @@ cd apps/web && bun run dev --port 3005      # .env.local 指向 http://localhost
 Apple Silicon 上 `greenlet` 不在 `uv.lock` 的 marker 里（它认 `aarch64`，
 macOS 报的是 `arm64`），跑 pytest 前要 `uv pip install greenlet`，
 然后一律用 `uv run --no-sync`，**不要动 `pyproject.toml` / `uv.lock`**。
+
+---
+
+## 集成时的改动（集成代理，2026-09-10）
+
+合入 sysu-sam 时补了一处权限收紧，代码之外没动别的。三处扩展点
+（SUBMODULES、registry、locales）合并零冲突，注册脚本没用上。
+
+### 版本回滚的四个接口从 read 收紧到 update
+
+`services/ext/assign_tools/versions.py` 里 `list_versions`、`version_markdown`、
+`diff_versions` 三个只读接口原本没有自己的课程级检查，实际生效的是上游
+`get_activity_versions` 内部那道 `AccessAction.READ`；`restore` 的
+`confirm=False` 预览分支也显式写了 READ。
+
+问题在于路由层的 `require_teacher` 只管组织级，所以实际效果是**本组织的任意
+教师能读本组织内任何课程的版本历史与 diff，包括不是他的课、包括未发布的草稿**。
+对内置 Instructor 角色尤其不对——那个角色的设定就是只能改自己的课。
+
+四处都补成 `AccessAction.UPDATE`，上游那道 READ 留着无妨，更严的先过。口径与
+学情、签到一致，通则写在 `docs/sysu-sam/EXT_TOOLS.md`「权限：两道门」：
+**凡是返回名单、成绩、他人提交内容、未发布草稿这类数据的接口，哪怕只读也按
+「能改这个资源的人」判。**
+
+`results` 和 `similarity` 本来就是对的（都走 `quickquiz._load_assignment`，
+那个函数的 `action` 默认值就是 UPDATE），没有动。
+
+`clone.py:108` 读源课程仍是 READ，保留：学期复用产出的是自己组织内的新课程，
+而源课程内容本就公开可读，风险低。目标课程那处（297 行）用 UPDATE 是对的。
+
+### 新增四条测试钉住这个口径
+
+`test_assign_tools.py` 末尾加了一组**不绕过 rbac** 的用例
+（`test_*_requires_update_not_read`），用一个 spy 记下每次
+`check_resource_access` 实际传的 action，断言是 UPDATE 且不是 READ。
+文件里原有的用例都挂 `bypass_ext_rbac`，验的是业务逻辑，拦不住权限回退。
+
+反向验过：把 `list_versions` 那处改回 READ，`test_list_versions_requires_update_not_read`
+立刻红；改回 UPDATE 就绿。
+
+### 集成验证结果
+
+| 项 | 结果 |
+| --- | --- |
+| 后端 pytest ext | 112 passed |
+| 后端 ruff | All checks passed |
+| 前端 tsc / e2e tsc | 均 exit 0 |
+| 前端 lint | 35 error 与基线持平；ext 新目录 0 |
+| e2e | 17 passed（骨架 6 + 学情 4 + 作业工具 7） |
+
+环境：本地预发栈，后端 :9008、前端 :3008，跑 e2e 前两个服务都重启过，
+确保验的是收紧后的代码。
+
