@@ -66,6 +66,14 @@ docker-compose pull learnhouse-app
 tar -cf - extra docker-compose.yml | ssh … 'tar -C /volume1/docker/learnhouse -xf -'
 ```
 
+**不需要 sudo**，也不需要先落 `/tmp` 中转（2026-09-10 在 NAS 上查实）：
+部署目录 `/volume1/docker/learnhouse` 及其下的 `docker-compose.yml`、`extra`、`patches`
+属主都是 `SAM-IPA518:users`，而该账号本身就在 `administrators` 组里，
+普通用户身份直接解包覆盖即可。
+
+例外是 `.env`（权限 600）和 `backups/`（里面的文件是 root 属主），读写都要 sudo。
+这两样本来就不在同步清单里；回滚时解 `backups/` 里的归档仍然要走 sudo。
+
 ### 5. 重建受影响容器
 
 **必须是 `up -d --force-recreate <服务>`，不能是 reload 或 restart。**

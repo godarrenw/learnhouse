@@ -77,8 +77,12 @@ log "同步 extra / docker-compose.yml…"
 # patches 不同步：补丁已经在镜像里
 # 注意这里不能用 herestring 喂密码：herestring 会顶掉管道成为 stdin，
 # 远端 tar 收到的就是密码字节而不是归档。sshpass -e 已经从 SSHPASS 拿 SSH 密码了。
-# TODO: 未验证 SAM-IPA518 是否有权覆盖 NAS_DIR 下那些文件（属主/权限还没核实）。
-#       不行就先 tar 到 /tmp，再 sudo_ssh 解包到 NAS_DIR。
+# 这一步**不需要 sudo**，也不需要先落 /tmp 中转（2026-09-10 已在 NAS 上查实）：
+#   uid=1026(SAM-IPA518) gid=100(users) groups=100(users),101(administrators),1023(http)
+#   /volume1/docker/learnhouse 及其下的 docker-compose.yml / extra / patches
+#   属主都是 SAM-IPA518:users，且该账号在 administrators 组里。
+# 例外是 .env（600）和 backups/（文件 root 属主），读写都要 sudo ——
+# 但这两样本来就不在同步清单里；回滚时解 backups 里的归档仍然走 sudo_ssh。
 tar -cf - extra docker-compose.yml \
   | $SSH "tar -C ${NAS_DIR} -xf -" || die "同步失败"
 
