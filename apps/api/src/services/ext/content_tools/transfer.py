@@ -21,12 +21,14 @@ README 和返回值里都会逐条说明，不静默丢掉。
 """
 import io
 import logging
+import mimetypes
 import os
 import re
 import zipfile
 from datetime import datetime
 
 from fastapi import HTTPException, Request, UploadFile
+from starlette.datastructures import Headers
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -531,7 +533,13 @@ async def _create_page(request, chapter_id, name, body, publish, tree, root, ch_
         if not basename.lower().endswith(IMAGE_EXTS):
             warnings.append("图片 %s 的扩展名不在允许列表里，跳过了" % src)
             continue
-        upload = UploadFile(file=io.BytesIO(data), filename=basename, size=len(data))
+        # 带上 content-type：`upload_file_and_return_file_object` 会把它写进块的
+        # file_type 字段，缺了就全变成 application/octet-stream。
+        # 真正的类型校验走扩展名 + 魔数（security/file_validation.py），不看这个头。
+        upload = UploadFile(
+            file=io.BytesIO(data), filename=basename, size=len(data),
+            headers=Headers({"content-type":
+                             mimetypes.guess_type(basename)[0] or "application/octet-stream"}))
         try:
             block = await create_image_block(
                 request, upload, act.activity_uuid, db_session, current_user)

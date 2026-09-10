@@ -673,3 +673,198 @@ def test_svg_里的说明文字做了转义():
     svg = qrgen.to_svg(matrix, caption='<script>&"')
     assert "<script>" not in svg
     assert "&lt;script&gt;&amp;" in svg
+
+
+# ============================================================ 导入导出真跑一遍
+#
+# 下面这组用 conftest 的 SQLite 库跑真的 service 调用，验的是「zip 进去 → 数据库里
+# 真的建出章节和页面 → 再导出来还是那些内容」。存储层（图片落盘）被打桩掉，
+# 因为那部分是上游的、也不该在单测里往磁盘写东西。
+
+from unittest.mock import AsyncMock, patch  # noqa: E402
+
+from src.services.blocks.schemas.files import BlockFile  # noqa: E402
+from src.services.ext.content_tools.transfer import (  # noqa: E402
+    export_course_markdown,
+    import_course_markdown,
+)
+
+_RBAC_TARGETS = [
+    "src.services.ext.content_tools.transfer.check_resource_access",
+    "src.services.courses.chapters.check_resource_access",
+    "src.services.courses.activities.activities.check_resource_access",
+    "src.services.blocks.block_types.imageBlock.imageBlock.check_resource_access",
+]
+
+IMPORT_ZIP_FILES = {
+    "热工基础/README.md": "# 热工基础\n",
+    "热工基础/01-绪论/01-课程简介.md": "\n".join([
+        "---",
+        "type: page",
+        "name: 课程简介",
+        "published: true",
+        "---",
+        "",
+        "# 课程简介",
+        "",
+        "这门课讲 **传热** 与热力学。",
+        "",
+        "- 第一讲：导热",
+        "- 第二讲：对流",
+        "",
+        "![示意图](../assets/pic.png)",
+        "",
+        "> [!info] 每周三上课",
+        "",
+    ]),
+    "热工基础/01-绪论/02-导学视频.md": "\n".join([
+        "---",
+        "type: embed",
+        "name: 导学视频",
+        "published: false",
+        "---",
+        "",
+        "[[EMBED:https://player.bilibili.com/player.html?bvid=BV1GJ411x7h7&p=1]]",
+        "",
+    ]),
+    "热工基础/01-绪论/03-讲义.md": "\n".join([
+        "---", "type: pdf", "name: 讲义", "published: true", "---", "",
+        "# 讲义\n", "",
+    ]),
+    "热工基础/assets/pic.png": b"\x89PNG\r\n\x1a\n" + b"0" * 64,
+}
+
+
+def _fake_block_file(*_args, **_kwargs):
+    return BlockFile(file_id="fakefileid", file_format="png", file_name="pic.png",
+                     file_size=72, file_type="image/png", activity_uuid="activity_x")
+
+
+class TestImportExportRoundtrip:
+    """zip → 数据库 → zip。"""
+
+    def _patches(self):
+        ctxs = [patch(t, new_callable=AsyncMock) for t in _RBAC_TARGETS]
+        ctxs.append(patch(
+            "src.services.blocks.block_types.imageBlock.imageBlock"
+            ".upload_file_and_return_file_object",
+            new_callable=AsyncMock, side_effect=_fake_block_file))
+        # update_activity 会起一个后台任务重建向量索引，单测里没这套东西
+        ctxs.append(patch(
+            "src.services.courses.activities.activities._trigger_course_embedding",
+            new_callable=AsyncMock))
+        return ctxs
+
+    async def _import(self, mock_request, db, admin_user, course, files=None):
+        ctxs = self._patches()
+        for c in ctxs:
+            c.start()
+        try:
+            return await import_course_markdown(
+                mock_request, course.course_uuid,
+                _zip_of(files or IMPORT_ZIP_FILES), admin_user, db)
+        finally:
+            for c in ctxs:
+                c.stop()
+
+    @pytest.mark.asyncio
+    async def test_导入建出章节与页面并跳过不支持的类型(
+            self, mock_request, db, org, course, admin_user):
+        res = await self._import(mock_request, db, admin_user, course)
+
+        assert res["counts"]["chapters"] == 1
+        assert res["chapters_created"][0]["name"] == "绪论"      # 序号前缀被剥掉
+        assert res["counts"]["activities"] == 2                  # page + embed
+        kinds = sorted(a["type"] for a in res["activities_created"])
+        assert kinds == ["embed", "page"]
+        # PDF 不还原，但必须逐条列出来而不是静默丢
+        assert res["counts"]["skipped"] == 1
+        assert res["skipped"][0]["type"] == "pdf"
+        assert "重新上传" in res["skipped"][0]["reason"]
+
+    @pytest.mark.asyncio
+    async def test_导入的页面内容里图片真的变成了_blockimage(
+            self, mock_request, db, org, course, admin_user):
+        res = await self._import(mock_request, db, admin_user, course)
+        page = next(a for a in res["activities_created"] if a["type"] == "page")
+        assert page["node_types"] == [
+            "heading", "paragraph", "bulletList", "blockImage", "calloutInfo"]
+        assert page["warnings"] == []
+
+    @pytest.mark.asyncio
+    async def test_压缩包里没有的图片只记警告不让整页失败(
+            self, mock_request, db, org, course, admin_user):
+        files = dict(IMPORT_ZIP_FILES)
+        del files["热工基础/assets/pic.png"]
+        res = await self._import(mock_request, db, admin_user, course, files)
+        page = next(a for a in res["activities_created"] if a["type"] == "page")
+        assert "blockImage" not in page["node_types"]
+        assert any("不在压缩包里" in w for w in page["warnings"])
+
+    @pytest.mark.asyncio
+    async def test_发布状态沿用_front_matter(
+            self, mock_request, db, org, course, admin_user):
+        from sqlmodel import select as _select
+
+        from src.db.courses.activities import Activity as _Activity
+        await self._import(mock_request, db, admin_user, course)
+        rows = (await db.execute(_select(_Activity))).scalars().all()
+        by_name = {a.name: a for a in rows}
+        assert by_name["课程简介"].published is True
+        assert by_name["导学视频"].published is False
+
+    @pytest.mark.asyncio
+    async def test_导出把刚导入的内容原样还原(
+            self, mock_request, db, org, course, admin_user):
+        await self._import(mock_request, db, admin_user, course)
+
+        with patch("src.services.ext.content_tools.transfer.check_resource_access",
+                   new_callable=AsyncMock):
+            # 图片字节要从存储层读，单测里没有那个目录，所以关掉图片
+            result = await export_course_markdown(
+                mock_request, course.course_uuid, admin_user, db, download_images=False)
+
+        names = zipfile.ZipFile(io.BytesIO(result["zip_bytes"])).namelist()
+        assert "Test Course/README.md" in names
+        assert "Test Course/01-绪论/01-课程简介.md" in names
+        assert "Test Course/01-绪论/02-导学视频.md" in names
+        assert result["summary"]["chapters"] == 1
+        assert result["summary"]["files"] == 2
+        assert result["filename"] == "Test Course.zip"
+
+        zf = zipfile.ZipFile(io.BytesIO(result["zip_bytes"]))
+        page_md = zf.read("Test Course/01-绪论/01-课程简介.md").decode("utf-8")
+        meta, body = parse_front_matter(page_md)
+        assert meta["type"] == "page" and meta["published"] == "true"
+        assert "# 课程简介" in body
+        assert "**传热**" in body
+        assert "> [!info] 每周三上课" in body
+
+        embed_md = zf.read("Test Course/01-绪论/02-导学视频.md").decode("utf-8")
+        assert "[[EMBED:https://player.bilibili.com/player.html?bvid=BV1GJ411x7h7" in embed_md
+
+        readme = zf.read("Test Course/README.md").decode("utf-8")
+        assert "## 目录" in readme
+        assert "只能还原" in readme          # 有损导出的说明必须在
+
+    @pytest.mark.asyncio
+    async def test_导出的包能再导入回去且结构一致(
+            self, mock_request, db, org, course, admin_user):
+        await self._import(mock_request, db, admin_user, course)
+        with patch("src.services.ext.content_tools.transfer.check_resource_access",
+                   new_callable=AsyncMock):
+            exported = await export_course_markdown(
+                mock_request, course.course_uuid, admin_user, db, download_images=False)
+
+        tree = read_zip_tree(exported["zip_bytes"])
+        _root, chapters = plan_import(tree)
+        assert [c[0] for c in chapters] == ["01-绪论"]
+        assert [e[1]["type"] for e in chapters[0][1]] == ["page", "embed"]
+
+    @pytest.mark.asyncio
+    async def test_课程不存在时报_404(self, mock_request, db, org, admin_user):
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc:
+            await import_course_markdown(
+                mock_request, "course_不存在", _zip_of(IMPORT_ZIP_FILES), admin_user, db)
+        assert exc.value.status_code == 404

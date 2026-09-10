@@ -18,7 +18,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
 from src.db.courses.activities import Activity
-from src.db.organizations import Organization
+from src.db.organization_config import OrganizationConfig
 from src.db.users import PublicUser
 from src.security.auth import get_current_user
 from src.services.ext.content_tools import avatar as avatar_svc
@@ -59,29 +59,30 @@ class AvatarAppendRequest(BaseModel):
 # ------------------------------------------------------------ 工具
 
 
+async def _org_config_by_id(db_session: AsyncSession, org_id: int):
+    """读组织配置的 JSON blob。
+
+    注意 `Organization` 这张表**没有** config 字段 —— 配置在单独的
+    `organizationconfig` 表里，`config` 列是个自由 dict，所以部署方自己加的
+    `ext` 段能原样存下来，不会被上游的 pydantic 模型剪掉。
+    读不到就返回 None，让 avatar 那边退回环境变量和内置默认值。
+    """
+    row = (await db_session.execute(
+        select(OrganizationConfig).where(OrganizationConfig.org_id == org_id)
+    )).scalars().first()
+    if row is None or not isinstance(row.config, dict):
+        return None
+    return row.config
+
+
 async def _org_config_of_activity(db_session: AsyncSession, activity_uuid: str):
-    """取活动所属组织的配置（读不到就返回 None，让 avatar 走环境变量兜底）。"""
+    """取活动所属组织的配置。"""
     activity = (await db_session.execute(
         select(Activity).where(Activity.activity_uuid == activity_uuid)
     )).scalars().first()
     if not activity:
         return None
-    org = (await db_session.execute(
-        select(Organization).where(Organization.id == activity.org_id)
-    )).scalars().first()
-    return _org_config_dict(org)
-
-
-def _org_config_dict(org):
-    if org is None:
-        return None
-    cfg = getattr(org, "config", None)
-    if cfg is None:
-        return None
-    if isinstance(cfg, dict):
-        return cfg
-    dump = getattr(cfg, "model_dump", None)
-    return dump() if callable(dump) else None
+    return await _org_config_by_id(db_session, activity.org_id)
 
 
 # ------------------------------------------------------------ Markdown 导入导出
@@ -219,12 +220,7 @@ async def api_avatar_config(
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(get_current_user),
 ):
-    org_config = None
-    if org_id is not None:
-        org = (await db_session.execute(
-            select(Organization).where(Organization.id == org_id)
-        )).scalars().first()
-        org_config = _org_config_dict(org)
+    org_config = await _org_config_by_id(db_session, org_id) if org_id is not None else None
     try:
         return avatar_svc.resolve_page_url(org_config)
     except AvatarError as e:
