@@ -8,28 +8,34 @@
 #
 # 还原： docker exec -i learnhouse-db-nas pg_restore -U learnhouse -d learnhouse --clean < db-xxx.dump
 set -e
-DOCKER=/usr/local/bin/docker
-D=/volume1/docker/learnhouse
+# 下面五个都可以用环境变量覆盖，不设就是生产的值 —— 生产行为与原来完全一致。
+# 覆盖是给部署演练用的（deploy.sh 的 TARGET=local 会把它们指向演练栈）。
+DOCKER=${LH_DOCKER:-/usr/local/bin/docker}
+D=${LH_DIR:-/volume1/docker/learnhouse}
+DB_CONTAINER=${LH_DB_CONTAINER:-learnhouse-db-nas}
+REDIS_CONTAINER=${LH_REDIS_CONTAINER:-learnhouse-redis-nas}
+PGUSER=${LH_PGUSER:-learnhouse}
+PGDB=${LH_PGDB:-learnhouse}
 B="$D/backups"
 TS=$(date +%F-%H%M)
 
 mkdir -p "$B"; chmod 700 "$B"
 
-"$DOCKER" exec learnhouse-db-nas pg_dump -U learnhouse -Fc learnhouse > "$B/db-$TS.dump"
+"$DOCKER" exec "$DB_CONTAINER" pg_dump -U "$PGUSER" -Fc "$PGDB" > "$B/db-$TS.dump"
 
 # 自检：pg_dump 自定义格式必须以 PGDMP 开头。容器没起来时会产出 0 字节文件，
 # 那种"看着有备份其实没有"的情况比没备份更危险，所以失败就删掉并报错退出。
 if ! head -c 5 "$B/db-$TS.dump" | grep -q PGDMP; then
     rm -f "$B/db-$TS.dump"
-    echo "[备份失败] 数据库 dump 无效，已删除。检查 learnhouse-db-nas 是否运行。" >&2
+    echo "[备份失败] 数据库 dump 无效，已删除。检查 $DB_CONTAINER 是否运行。" >&2
     exit 1
 fi
 
 # Redis 不是纯缓存：注册邀请码（TTL 365 天）、AI 会话都只存在这里，Postgres 里没有。
 # 丢了 Redis = 已发出去的邀请码全部失效，所以必须一起备份。
 # SAVE 是同步阻塞的，但这个库只有几 MB，瞬间完成。
-"$DOCKER" exec learnhouse-redis-nas redis-cli SAVE > /dev/null
-"$DOCKER" exec learnhouse-redis-nas tar -czf - -C / data > "$B/redis-$TS.tar.gz"
+"$DOCKER" exec "$REDIS_CONTAINER" redis-cli SAVE > /dev/null
+"$DOCKER" exec "$REDIS_CONTAINER" tar -czf - -C / data > "$B/redis-$TS.tar.gz"
 if ! tar -tzf "$B/redis-$TS.tar.gz" > /dev/null 2>&1; then
     rm -f "$B/redis-$TS.tar.gz"
     echo "[备份失败] Redis 归档无效，已删除。" >&2

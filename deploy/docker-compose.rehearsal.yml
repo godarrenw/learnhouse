@@ -1,0 +1,40 @@
+# 部署演练用的 override，配合 docker-compose.yml 一起用：
+#   docker-compose -p learnhouse-reh -f docker-compose.yml -f docker-compose.rehearsal.yml …
+# deploy.sh 的 TARGET=local 模式会自动带上它。
+#
+# 生产那份 docker-compose.yml 仍是唯一真相源，这里**只写差异**，免得两份配置各改各的。
+# 差异只有四类：
+#   1. 容器名后缀 -reh，项目名 learnhouse-reh（数据卷与网络会跟着项目名自动隔离）
+#   2. 端口 8088 -> 28088（8088 在本机被别的项目占了，18088 是 local-stack 的栈）
+#   3. 网段 172.20 -> 172.22（避开生产 172.20 与 local-stack 的 172.21）
+#   4. 镜像换成本机构建的 arm64 版（ghcr 上那个只有 amd64，Mac 上跑不了）
+
+services:
+  learnhouse-app:
+    image: learnhouse-sysu-sam:local
+    platform: linux/arm64
+    container_name: learnhouse-app-reh
+
+  nginx:
+    container_name: learnhouse-nginx-reh
+    # !override 是必须的：compose 合并 ports 是**追加**不是替换，
+    # 不加的话会同时尝试绑 8088 和 28088，8088 被别的项目占着就直接起不来。
+    ports: !override
+      - "28088:80"
+
+  ssr-fwd:
+    container_name: learnhouse-ssr-fwd-reh
+    # 端口要与 .env 里的 NEXT_PUBLIC_* 一致，否则 Next.js Server Actions 会拒绝
+    command: TCP-LISTEN:28088,fork,reuseaddr TCP:localhost:80
+
+  db:
+    container_name: learnhouse-db-reh
+
+  redis:
+    container_name: learnhouse-redis-reh
+
+networks:
+  learnhouse-network-nas:
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
