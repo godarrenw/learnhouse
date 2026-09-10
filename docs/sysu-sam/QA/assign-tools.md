@@ -73,11 +73,11 @@ query 参数带来的硬要求，前端的 `services/ext/assign.ts` 统一在 UR
 
 ### 4.1 后端单测
 
-`apps/api/src/tests/ext/test_assign_tools.py`，52 条；连骨架自己的 ext 测试一起 74 条全过：
+`apps/api/src/tests/ext/test_assign_tools.py`，52 条；连骨架与学情的 ext 测试一起 100 条全过：
 
 ```
 $ cd apps/api && uv run pytest src/tests/ext -q
-74 passed
+100 passed
 $ uv run ruff check src/
 All checks passed!
 ```
@@ -127,10 +127,10 @@ LLM 调用在测试里只 mock 了 `chat_completion` 这一个联网入口。
 
 ### 4.3 前端 E2E（apps/e2e 套件里的 spec）
 
-`apps/e2e/features/ext/assign/tests/01-assign-tools.spec.ts`，7 条用例，和骨架的 ext
-用例跑在同一个套件里（一起 13 条全过）。
+`apps/e2e/features/ext/tests/03-assign-tools.spec.ts`，7 条用例，和骨架、学情的 ext
+用例跑在同一个套件里（一起 16 条全过）。
 
-夹具在 `features/ext/assign/api.ts`，**全部走 REST API 建、跑完删**，不碰数据库，
+夹具在 `features/ext/assign-api.ts`，**全部走 REST API 建、跑完删**，不碰数据库，
 所以对着自己 boot 的干净实例或 `E2E_SKIP_BOOT=1` 指向的本地预发栈都能跑，
 也不会在共享的预发栈里留垃圾。它造出来的东西：一门带随机后缀的课 + 一个章节、
 一个改过两次因而有历史版本的富文本内容页、一份 2099-03-01 截止的作业、
@@ -145,7 +145,7 @@ $ E2E_SKIP_BOOT=1 \
   E2E_STUDENT_EMAIL=user2@example.local E2E_STUDENT_PASSWORD='LocalDev#2026' \
   bun run test features/ext
   ...
-  13 passed (20.8s)
+  16 passed (31.8s)
 ```
 
 七条用例分别钉住：
@@ -217,7 +217,7 @@ $ npx eslint --max-warnings=0 components/SysuTools/tools/assign services/ext/ass
 
 ## 六、和骨架的接口（已经接完）
 
-骨架已经合入 `sysu-sam`（`33537025`），本分支 rebase 上去后接了这四处，
+骨架已经合入 `sysu-sam`（学情合入后是 `d20e8c19`），本分支 rebase 上去后接了这四处，
 上面第四节的验证证据都是 rebase **之后**重新跑的：
 
 1. `apps/api/src/routers/ext/__init__.py` 的 `SUBMODULES` 里加了一行

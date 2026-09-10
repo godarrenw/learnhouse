@@ -13,10 +13,10 @@
  *  - 一份形成性随堂测（一道选择题），可选地让一个学生交一份卷，
  *    好让结果面板有真实的答对率
  */
-import { API_URL, uniqueSuffix } from '../../../core/instance'
-import { req } from '../../../core/client'
-import type { Org } from '../../../core/client'
-import { saveTaskSubmission, submitAssignment } from '../../assignments/api'
+import { API_URL, uniqueSuffix } from '../../core/instance'
+import { req } from '../../core/client'
+import type { Org } from '../../core/client'
+import { saveTaskSubmission, submitAssignment } from '../assignments/api'
 
 /** 内容页的正文。AI 出题会读它，所以要像一节真课，不能是 lorem。 */
 function pageDoc(revision: string) {

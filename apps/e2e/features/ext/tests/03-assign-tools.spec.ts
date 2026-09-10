@@ -16,22 +16,22 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { test, expect } from '../../../../core/fixtures'
-import { ADMIN_STATE } from '../../../../core/sharedAuth'
+import { test, expect } from '../../../core/fixtures'
+import { ADMIN_STATE } from '../../../core/sharedAuth'
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
   ORG_SLUG,
   SHARED_STUDENT_EMAIL,
   SHARED_STUDENT_PASSWORD,
-} from '../../../../core/instance'
-import { getOrg, login, req } from '../../../../core/client'
+} from '../../../core/instance'
+import { getOrg, login, req } from '../../../core/client'
 import {
   AssignFixture,
   cleanupAssignFixture,
   deleteCoursesNamed,
   seedAssignFixture,
-} from '../api'
+} from '../assign-api'
 
 test.use({ storageState: ADMIN_STATE })
 
@@ -41,7 +41,7 @@ const TOOL_URL = '/dash/tools/assign'
  * 设了 `EXT_SHOTS=1` 就顺手把每个 Tab 截一张图到 docs/sysu-sam/QA/assign/，
  * QA 文档里的图就是这么来的。默认不截，免得每次跑用例都写文件。
  */
-const SHOTS_DIR = fileURLToPath(new URL('../../../../../../docs/sysu-sam/QA/assign/', import.meta.url))
+const SHOTS_DIR = fileURLToPath(new URL('../../../../../docs/sysu-sam/QA/assign/', import.meta.url))
 const WANT_SHOTS = process.env.EXT_SHOTS === '1'
 
 async function maybeShot(page: any, name: string, focus?: any) {
