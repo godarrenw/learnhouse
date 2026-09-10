@@ -170,6 +170,15 @@ async def api_export_course_markdown(
             "X-Export-Files": str(summary["files"]),
             "X-Export-Images": str(summary["images"]),
             "X-Export-Notes": str(len(summary["notes"])),
+            # 前端和后端不同源时（本地开发是 3000 对 9000），浏览器默认只让 JS 读
+            # 那几个 simple header，Content-Disposition 和下面这些 X- 头都读不到 ——
+            # 表现是文件名变成兜底值、统计全是 0，而且**不报任何错**。
+            # 全局 CORS 中间件没有配 expose_headers，那是上游的共用代码，
+            # 所以在自己这条响应上单独声明。
+            "Access-Control-Expose-Headers": (
+                "Content-Disposition, X-Export-Chapters, X-Export-Files, "
+                "X-Export-Images, X-Export-Notes"
+            ),
         },
     )
 

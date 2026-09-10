@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.db.courses.activities import Activity, ActivityUpdate
+from src.db.courses.activities import Activity, ActivitySubTypeEnum, ActivityUpdate
 from src.services.courses.activities.activities import update_activity
 
 from . import avatar as avatar_mod
@@ -41,14 +41,20 @@ async def append_avatar_embed(
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
-    doc = activity.content or {}
-    if not isinstance(doc, dict) or doc.get("type") != "doc":
+    # 按**活动类型**判断能不能追加，不看 content 长什么样：
+    # 一个还没写过正文的内容页，content 就是 `{}`（既不是 doc 也不是别的），
+    # 照 content 判断会把这种页面误判成「不是内容页」而拒掉 —— 而这恰恰是老师
+    # 最想加虚拟助教的场景（新建一页，只放一个数字人）。
+    sub = activity.activity_sub_type
+    sub = sub.value if hasattr(sub, "value") else str(sub)
+    if sub != ActivitySubTypeEnum.SUBTYPE_DYNAMIC_PAGE.value:
         raise HTTPException(
             status_code=400,
-            detail=("活动「%s」不是富文本内容页，不能往里追加虚拟助教。"
-                    "整页嵌入的视频活动请新建一页。" % activity.name))
+            detail=("活动「%s」不是富文本内容页（类型 %s），不能往里追加虚拟助教。"
+                    "整页嵌入的视频、PDF、作业请新建一页。" % (activity.name, sub)))
 
-    nodes = list(doc.get("content") or [])
+    doc = activity.content if isinstance(activity.content, dict) else {}
+    nodes = list(doc.get("content") or []) if doc.get("type") == "doc" else []
     before = len(nodes)
     if title:
         nodes.append({"type": "heading", "attrs": {"level": 2}, "content": inline_nodes(title)})

@@ -870,3 +870,133 @@ class TestImportExportRoundtrip:
             await import_course_markdown(
                 mock_request, "course_不存在", _zip_of(IMPORT_ZIP_FILES), admin_user, db)
         assert exc.value.status_code == 404
+
+
+class TestAvatarAppend:
+    """虚拟助教追加到内容页。用的是真的 service 调用，不是打桩。"""
+
+    async def _append(self, mock_request, db, admin_user, activity_uuid, script="大家好，今天讲第一章。"):
+        from src.services.ext.content_tools.activities import append_avatar_embed
+
+        ctxs = [
+            patch("src.services.courses.activities.activities.check_resource_access",
+                  new_callable=AsyncMock),
+            patch("src.services.courses.activities.activities._trigger_course_embedding",
+                  new_callable=AsyncMock),
+        ]
+        for c in ctxs:
+            c.start()
+        try:
+            return await append_avatar_embed(
+                mock_request, activity_uuid, script, admin_user, db,
+                page_url="https://example.com/avatar")
+        finally:
+            for c in ctxs:
+                c.stop()
+
+    @pytest.mark.asyncio
+    async def test_追加到已有内容的页面(self, mock_request, db, org, course, chapter,
+                                        activity, admin_user):
+        activity.content = {"type": "doc", "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "原有正文"}]}]}
+        db.add(activity)
+        await db.commit()
+
+        res = await self._append(mock_request, db, admin_user, activity.activity_uuid)
+        assert res["nodes_before"] == 1
+        assert res["nodes_after"] == 2
+        assert res["url_length"] > 0
+        assert res["embed_url"].startswith("https://example.com/avatar#")
+
+        await db.refresh(activity)
+        nodes = activity.content["content"]
+        assert nodes[0]["content"][0]["text"] == "原有正文"      # 原有内容没被动
+        assert nodes[-1]["type"] == "blockEmbed"
+        assert nodes[-1]["attrs"]["embedHeight"] == avatar.DEFAULT_HEIGHT
+
+    @pytest.mark.asyncio
+    async def test_还没写过正文的页面也能加(self, mock_request, db, org, course, chapter,
+                                            activity, admin_user):
+        """新建的内容页 content 是 `{}`，既不是 doc 也不是别的。
+
+        这是老师最想加虚拟助教的场景（新建一页只放一个数字人），
+        按 content 长相判断会把它误判成「不是内容页」拒掉。
+        """
+        activity.content = {}
+        db.add(activity)
+        await db.commit()
+
+        res = await self._append(mock_request, db, admin_user, activity.activity_uuid)
+        assert res["nodes_before"] == 0
+        assert res["nodes_after"] == 1
+
+        await db.refresh(activity)
+        assert activity.content["type"] == "doc"
+        assert activity.content["content"][0]["type"] == "blockEmbed"
+
+    @pytest.mark.asyncio
+    async def test_带小标题时多插一个二级标题(self, mock_request, db, org, course, chapter,
+                                              activity, admin_user):
+        from src.services.ext.content_tools.activities import append_avatar_embed
+
+        activity.content = {}
+        db.add(activity)
+        await db.commit()
+        ctxs = [
+            patch("src.services.courses.activities.activities.check_resource_access",
+                  new_callable=AsyncMock),
+            patch("src.services.courses.activities.activities._trigger_course_embedding",
+                  new_callable=AsyncMock),
+        ]
+        for c in ctxs:
+            c.start()
+        try:
+            res = await append_avatar_embed(
+                mock_request, activity.activity_uuid, "大家好，今天讲第一章。", admin_user, db,
+                title="本节要点", page_url="https://example.com/avatar")
+        finally:
+            for c in ctxs:
+                c.stop()
+
+        assert res["nodes_after"] == 2
+        await db.refresh(activity)
+        assert activity.content["content"][0]["type"] == "heading"
+        assert activity.content["content"][1]["type"] == "blockEmbed"
+
+    @pytest.mark.asyncio
+    async def test_不是内容页的活动被拒(self, mock_request, db, org, course, chapter,
+                                        activity, admin_user):
+        from fastapi import HTTPException
+
+        from src.db.courses.activities import ActivitySubTypeEnum
+        activity.activity_sub_type = ActivitySubTypeEnum.SUBTYPE_DYNAMIC_EMBED
+        activity.content = {"embed_url": "https://player.bilibili.com/player.html?bvid=BV1"}
+        db.add(activity)
+        await db.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            await self._append(mock_request, db, admin_user, activity.activity_uuid)
+        assert exc.value.status_code == 400
+        assert "不是富文本内容页" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_活动不存在报_404(self, mock_request, db, org, admin_user):
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc:
+            await self._append(mock_request, db, admin_user, "activity_不存在")
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_空讲稿在动页面之前就报错(self, mock_request, db, org, course, chapter,
+                                            activity, admin_user):
+        """先算链接再动页面：讲稿有问题时页面一个字都不该被改。"""
+        activity.content = {"type": "doc", "content": []}
+        db.add(activity)
+        await db.commit()
+
+        with pytest.raises(avatar.AvatarError):
+            await self._append(mock_request, db, admin_user, activity.activity_uuid,
+                               script="```\nprint(1)\n```")
+        await db.refresh(activity)
+        assert activity.content == {"type": "doc", "content": []}
