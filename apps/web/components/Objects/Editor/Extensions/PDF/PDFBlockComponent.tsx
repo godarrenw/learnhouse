@@ -11,6 +11,10 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { constructAcceptValue } from '@/lib/constants';
 import Modal from '@components/Objects/StyledElements/Modal/Modal'
 import { useTranslation } from 'react-i18next'
+/* --- SYSU-SAM --- */
+import { useCampusNetwork } from '@services/media/useCampusNetwork'
+import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
+/* --- SYSU-SAM --- */
 
 const SUPPORTED_FILES = constructAcceptValue(['pdf'])
 
@@ -34,6 +38,13 @@ function PDFBlockComponent(props: any) {
     : null
   const editorState = useEditorProvider() as any
   const isEditable = editorState.isEditable
+
+  /* --- SYSU-SAM --- */
+  // PDF 块在校外取不到（重媒体被分流到只在校园网可解析的域名），
+  // 而跨域 iframe 加载失败不触发事件，所以主动探一次。
+  // 只影响阅读态：编辑态（教师）在校内，仍然按原样渲染。
+  const campusNetwork = useCampusNetwork()
+  /* --- SYSU-SAM --- */
 
   const handlePDFChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -108,6 +119,18 @@ function PDFBlockComponent(props: any) {
   ) : null;
 
   useEffect(() => { }, [course, org])
+
+  /* --- SYSU-SAM --- */
+  if (!isEditable && blockObject && campusNetwork === 'unreachable') {
+    return (
+      <NodeViewWrapper className="block-pdf">
+        <div className="h-96 w-full overflow-hidden rounded-lg nice-shadow">
+          <CampusOnlyNotice variant="light" />
+        </div>
+      </NodeViewWrapper>
+    )
+  }
+  /* --- SYSU-SAM --- */
 
   // View mode without PDF
   if (!isEditable && !blockObject) {

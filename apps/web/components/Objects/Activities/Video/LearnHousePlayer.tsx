@@ -4,6 +4,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import 'video.js/dist/video-js.css'
 import './player-controls.css'
 import { shouldSendHlsCredentials, type CaptionTrack } from './videoSource'
+/* --- SYSU-SAM --- */
+import { useCampusNetwork } from '@services/media/useCampusNetwork'
+import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
+/* --- SYSU-SAM --- */
 
 const SEEK_SECONDS = 15
 
@@ -84,6 +88,13 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
   thumbnails,
   captions,
 }) => {
+  /* --- SYSU-SAM --- */
+  // 校外用户连不到内部媒体域名，<video> 只会长时间转圈。先探一次校园网可达性，
+  // 探不通就直接换成提示卡片。没配 HEAVY_MEDIA_URL 时这里恒为 reachable，
+  // 不发任何请求，行为与上游一致。
+  const campusNetwork = useCampusNetwork()
+  /* --- SYSU-SAM --- */
+
   const containerRef = useRef<HTMLDivElement>(null)
 
   const playerRef = useRef<any>(null)
@@ -328,6 +339,15 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
     // everywhere anyway.
     <div dir="ltr" className="learnhouse-player relative w-full h-full" data-vjs-player>
       <div ref={containerRef} className="w-full h-full" />
+      {/* --- SYSU-SAM --- */}
+      {campusNetwork === 'unreachable' && (
+        // 叠一层而不是提前 return：提前 return 会把 containerRef 摘掉，
+        // 而 video.js 实例还挂在 playerRef 上，dispose 的清理路径就断了。
+        <div className="absolute inset-0 z-20">
+          <CampusOnlyNotice variant="dark" />
+        </div>
+      )}
+      {/* --- SYSU-SAM --- */}
       {loadError && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 text-center text-white">
           <p className="text-sm opacity-90">This video couldn’t be loaded.</p>
