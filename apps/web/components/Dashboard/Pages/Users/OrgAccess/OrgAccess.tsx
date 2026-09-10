@@ -5,6 +5,9 @@ import { getAPIUrl, getAbsoluteUriWithOrg } from '@services/config/config'
 import { apiFetch } from '@services/utils/ts/requests'
 import { Check, Copy, Globe, Ticket, UserSquare, Users, X } from 'lucide-react'
 import Link from 'next/link'
+/* --- SYSU-SAM: 内容工具 · 邀请码二维码 --- */
+import InviteQrButton from '@components/SysuTools/tools/content/InviteQrButton'
+/* --- /SYSU-SAM --- */
 import React, { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query/keys'
@@ -217,6 +220,12 @@ function OrgAccess() {
                               {getAbsoluteUriWithOrg(org.slug, `/signup?inviteCode=${invite.invite_code}`)}
                             </Link>
                             <CopyButton text={getAbsoluteUriWithOrg(org.slug, `/signup?inviteCode=${invite.invite_code}`)} />
+                            {/* --- SYSU-SAM: 内容工具 · 邀请码二维码 --- */}
+                            <InviteQrButton
+                              code={invite.invite_code}
+                              signupLink={getAbsoluteUriWithOrg(org.slug, `/signup?inviteCode=${invite.invite_code}`)}
+                            />
+                            {/* --- /SYSU-SAM --- */}
                           </div>
                         </td>
                         <td className="py-3 px-4 sm:px-6">

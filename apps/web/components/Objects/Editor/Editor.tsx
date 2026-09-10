@@ -68,6 +68,9 @@ import UserBlock from './Extensions/Users/UserBlock'
 import DragHandle from './Extensions/DragHandle/DragHandle'
 import { SlashCommands } from './Extensions/SlashCommands'
 import PasteFileHandler from './Extensions/PasteFileHandler/PasteFileHandler'
+/* --- SYSU-SAM: 内容工具 · 粘贴视频链接自动变播放器 --- */
+import SysuBilibiliPaste from './Extensions/SysuBilibiliPaste/SysuBilibiliPaste'
+/* --- /SYSU-SAM --- */
 import MagicBlock from './Extensions/MagicBlocks/MagicBlock'
 import PlanBadge from '@components/Dashboard/Shared/PlanRestricted/PlanBadge'
 import { PlanLevel } from '@services/plans/plans'
@@ -200,6 +203,9 @@ function Editor(props: EditorProps) {
         activity: stableActivity,
         getAccessToken,
       }),
+      /* --- SYSU-SAM: 内容工具 · 粘贴视频链接自动变播放器 --- */
+      SysuBilibiliPaste.configure({ getAccessToken, embedHeight: 400 }),
+      /* --- /SYSU-SAM --- */
       MagicBlock.configure({ editable: true, activity: stableActivity }),
       AIStreamingMark,
       AISelectionHighlight,
