@@ -2,7 +2,10 @@ name: learnhouse-nas
 
 services:
   learnhouse-app:
-    image: ghcr.io/learnhouse/app:1.3.6
+    # 自建镜像：由本仓库 .github/workflows/build-image.yml 从 sysu-sam 分支源码构建
+    # （linux/amd64，NAS 是 x86_64）。5 条补丁已在源码里，不再需要任何 bind-mount。
+    # 要钉死某次构建就换成 :sysu-sam-<sha7>；打 sysu-v* tag 时会额外出一个版本 tag。
+    image: ghcr.io/godarrenw/learnhouse:sysu-sam
     container_name: learnhouse-app-nas
     restart: unless-stopped
     env_file:
@@ -14,28 +17,10 @@ services:
       # bind mount 而非 named volume：课程视频/图片体积大，放在
       # /volume1/docker/learnhouse/data/content 下便于 Hyper Backup 备份
       - ./data/content:/app/api/content
-      # PATCH(nas): 覆盖镜像内两个 .py —— 见 patches/README.md
-      #   generator.py      生图改走 OpenAI 兼容接口(硅基流动)，原版硬编码 Google-only
-      #   courseplanning.py 修复 "zh-CN" 匹配不到语言表而回落 English 的问题
-      # 升级镜像后必须重新核对这两个文件与新版的差异！
-      - ./patches/generator.py:/app/api/src/services/ai/image/generator.py:ro
-      - ./patches/courseplanning.py:/app/api/src/services/ai/courseplanning.py:ro
-      #   magic_login.py    登录邮件中文化 + 品牌名
-      - ./patches/magic_login.py:/app/api/src/services/auth/magic_login.py:ro
-      # PATCH(nas): 中文语言包去品牌化。只替换学生可见的品牌文案（登录页条款、
-      #   版权行、欢迎语等），保留导入格式名、环境变量名、水印设置说明等技术标识，
-      #   版权行改为「本平台名 · 基于 LearnHouse 构建（AGPL-3.0）」以保留上游归属。
-      #   zh.json 供服务端使用；chunk 是客户端懒加载的编译产物。
-      # !! chunk 文件名由构建产物决定，升级镜像后这条挂载会静默失效，必须重新确认文件名：
-      #    docker exec learnhouse-app-nas grep -rl '大学' /app/web/.next/static/chunks/
-      - ./patches/web/zh.json:/app/web/locales/zh.json:ro
-      - ./patches/web/zh.chunk.js:/app/web/.next/static/chunks/3bdcaw90zbhgi.js:ro
-      # PATCH(nas): 修复「新建作业」弹窗对任何课程都显示"此课程尚无章节"（上游 1.3.6 缺陷，main 仍未修）。
-      #   原因：弹窗剥掉 course_ 前缀后调 GET /courses/{uuid} → 404；且该接口返回 CourseRead，本就不含 chapters。
-      #   改为请求 /courses/course_{uuid}/meta?slim=true（FullCourseRead，含章节，与课程编辑器同源）。
-      # !! 同样是构建产物文件名，升级镜像后需重新定位：
-      #    docker exec learnhouse-app-nas grep -rl assignment-course-structure /app/web/.next/static/chunks/
-      - ./patches/web/assign.chunk.js:/app/web/.next/static/chunks/1xclx_yg371wb.js:ro
+      # 原先这里有 5 条 patch bind-mount（generator.py / courseplanning.py /
+      # magic_login.py / zh.json + zh.chunk.js / assign.chunk.js），把改动覆盖进镜像。
+      # 换自建镜像后全部删除 —— 这些改动已作为源码提交在 sysu-sam 分支上，
+      # 补丁到 commit 的映射见 docs/sysu-sam/PATCHES.md。
     depends_on:
       db:
         condition: service_healthy

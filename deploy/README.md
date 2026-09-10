@@ -1,0 +1,90 @@
+# deploy/ —— 生产部署配置
+
+这里是先进智造学堂线上环境（群晖 NAS 172.25.5.162）的部署配置，纳入版本管理是为了
+「NAS 上跑的到底是什么」有据可查、可复原。**本目录不会自动同步到 NAS**，改完要人工上传。
+
+## 与 NAS 目录的对应关系
+
+NAS 上的部署根目录是 `/volume1/docker/learnhouse`，compose 项目名 `learnhouse-nas`，
+对外唯一端口 8088。
+
+| 本仓库 | NAS 上的路径 | 说明 |
+|---|---|---|
+| `deploy/docker-compose.yml` | `/volume1/docker/learnhouse/docker-compose.yml` | 5 个服务：app / nginx / ssr-fwd / db / redis |
+| `deploy/extra/nginx.prod.conf` | `/volume1/docker/learnhouse/extra/nginx.prod.conf` | 外层 nginx，挂进 nginx 容器的 `conf.d/default.conf` |
+| `deploy/backup.sh` | `/volume1/docker/learnhouse/backup.sh` | 由 `/etc/crontab` 每日 02:00 触发 |
+| `deploy/.env.example` | `/volume1/docker/learnhouse/.env` | **只有键名和非敏感值**，真实密钥永不进仓库 |
+| 无（不进仓库） | `/volume1/docker/learnhouse/data/content` | 课程图片/视频，体积大，靠 DSM 快照或 Hyper Backup |
+| 无（不再需要） | `/volume1/docker/learnhouse/patches/` | 见下面「patches 目录的去向」 |
+| 无（不进仓库） | `/volume1/docker/learnhouse/backups/` | backup.sh 的产出，保留 14 天 |
+
+## 这份配置与线上现状的差异
+
+`git log --oneline -- deploy/` 里有两个提交，请分清：
+
+1. **基线提交**：从 NAS 原样拉下来的配置，就是当前线上跑的东西
+   （镜像 `ghcr.io/learnhouse/app:1.3.6` + 5 条 patch bind-mount）。
+2. **切换到自建镜像**（当前 HEAD 的状态，**尚未部署到线上**）：
+   - 镜像换成 `ghcr.io/godarrenw/learnhouse:sysu-sam`
+   - 删掉 5 条 patch bind-mount —— 改动已经在源码里，见 `docs/sysu-sam/PATCHES.md`
+   - `nginx.prod.conf` 删掉针对 `3bdcaw90zbhgi.js` / `1xclx_yg371wb.js` 的 no-cache location。
+     那段存在的唯一理由是补丁改编译产物却不改文件名；自建镜像里 chunk 文件名是内容哈希，
+     内容变了名字就变，immutable 缓存不再有害。
+
+想知道切换要动哪几行，直接 `git diff` 这两个提交。
+
+## 切到自建镜像的步骤
+
+前提：`ghcr.io/godarrenw/learnhouse` 这个包默认是 **private**，NAS 拉不到。二选一：
+- 在 GitHub 的 Packages 页面把它改成 public（本项目基于 AGPL-3.0，公开镜像本就合规）；
+- 或者在 NAS 上 `docker login ghcr.io -u godarrenw -p <带 read:packages 的 PAT>`。
+
+步骤：
+1. `sh /volume1/docker/learnhouse/backup.sh` —— 先备份，确认输出的字节数不是 0
+2. 上传本目录的 `docker-compose.yml` 和 `extra/nginx.prod.conf`（**不要动 `.env`**）
+3. `/usr/local/bin/docker compose pull && /usr/local/bin/docker compose up -d`
+4. 等 app 容器 healthy（首次要跑迁移，`start_period` 给了 180s），然后核对补丁生效：
+   ```sh
+   D=/usr/local/bin/docker
+   $D exec learnhouse-app-nas grep -c 'PATCH(nas)' /app/api/src/services/ai/courseplanning.py
+   $D exec learnhouse-app-nas grep -rl '先进智造学堂' /app/web/.next/static/chunks/ | head
+   $D exec learnhouse-app-nas grep -rl 'meta?slim=true' /app/web/.next/static/chunks/ | head
+   ```
+   三条都要有输出。
+5. 确认无误后，NAS 上的 `patches/` 目录可以留着当历史存档，但不再被任何挂载引用。
+
+回滚：把基线提交的 `docker-compose.yml` 和 `nginx.prod.conf` 传回去，`up -d` 即可。
+`patches/` 只要没删就还在原位。
+
+## patches 目录的去向
+
+`patches/README.md` 是 AGPL-3.0 第 5(a) 条要求的「修改说明」和第 13 条要求的
+「向使用者提供修改后源码」。切到自建镜像后，这个义务由本仓库本身履行 ——
+`godarrenw/learnhouse` 的 `sysu-sam` 分支就是修改后的完整源码，
+每个补丁一个 commit，映射见 `docs/sysu-sam/PATCHES.md`。
+
+平台页脚的源码获取指引应指向本仓库地址。
+
+## 备份要点
+
+`backup.sh` 每天产出三份，保留 14 天：
+
+- `backups/db-<时间>.dump` —— `pg_dump -Fc`，脚本会校验文件头是 `PGDMP`，无效就删掉并报错
+- `backups/redis-<时间>.tar.gz` —— **Redis 不是纯缓存**：注册邀请码（TTL 365 天）和 AI 会话
+  只存在 Redis，Postgres 里没有。丢了它等于已发出的邀请码全部失效
+- `backups/config-<时间>.tar.gz` —— `.env` / `docker-compose.yml` / `patches` / `extra`
+
+**课程图片与视频（`data/content`）不在上述备份内**，体积太大，需要 DSM 的快照或
+Hyper Backup 覆盖 docker 共享文件夹。
+
+还原数据库：
+```sh
+docker exec -i learnhouse-db-nas pg_restore -U learnhouse -d learnhouse --clean < db-xxx.dump
+```
+还原 Redis：停 redis 容器 → 把归档里的 `data/` 覆盖回卷 → 启动。
+
+## 不要用官方 `learnhouse update`
+
+官方 update 命令会把 `content` 迁到 named volume，破坏本部署的 bind-mount
+（上游 `docs/self-hosting/maintenance/updates.mdx`）。升级流程见
+`docs/sysu-sam/DEVELOPING.md` 的「跟上游升级」一节。
