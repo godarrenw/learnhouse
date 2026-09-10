@@ -78,12 +78,26 @@ apps/api/src/services/users/emails.py              | 180 ++++-
 镜像建好后，三条都要有输出才算前后端补丁都进去了：
 
 ```sh
-docker run --rm <镜像> sh -c "
-  grep -c 'PATCH(nas)' /app/api/src/services/ai/courseplanning.py
-  grep -rl '先进智造学堂' /app/web/.next/static/chunks/ | head
-  grep -rl 'meta?slim=true'  /app/web/.next/static/chunks/ | head
+docker run --rm --entrypoint sh <镜像> -c "
+  grep -c 'PATCH(nas)'        /app/api/src/services/ai/courseplanning.py
+  grep -c 'images/generations' /app/api/src/services/ai/image/generator.py
+  grep -c '登录先进智造学堂'    /app/api/src/services/auth/magic_login.py
+  grep -rl '先进智造学堂' /app/web/.next/static/chunks/ | head -3
+  grep -rl assignment-course-structure /app/web/.next/static/chunks/ | xargs grep -l getCourseMetadata
 "
 ```
+
+第 5 条别去 grep `meta?slim=true`：`getCourseMetadata` 是用 `URLSearchParams` 在运行时拼
+query string 的，编译产物里只有 `course_${e}/meta` 和单独的 `slim`，那个字面量永远搜不到。
+要确认得更死一点，就把含 `assignment-course-structure` 的 chunk 拷出来看这一段：
+
+```js
+queryKey:["assignment-course-structure",f],
+queryFn:()=>(0,o.getCourseMetadata)(f,null,g,{slim:!0})
+```
+
+2026-09-10 在本地 arm64 镜像上实测：5 条全部命中，`/app/api/ee` 已被
+`LEARNHOUSE_PUBLIC=true` 剔除。
 
 ## AGPL-3.0 合规
 
