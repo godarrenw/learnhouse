@@ -2,7 +2,7 @@
 # 先进智造学堂（LearnHouse@NAS）每日备份
 #   产出：backups/db-<时间>.dump      数据库（pg_dump 自定义格式，可 pg_restore）
 #         backups/redis-<时间>.tar.gz   Redis（邀请码、AI 会话——这些不在数据库里）
-#         backups/config-<时间>.tar.gz  .env / docker-compose.yml / patches / extra
+#         backups/config-<时间>.tar.gz  .env / docker-compose.yml / extra（patches 若还在也一并打）
 #   保留 14 天。课程图片视频在 data/content，不在此脚本内——那部分靠
 #   DSM 对 docker 共享文件夹的快照 / Hyper Backup 覆盖。
 #
@@ -42,7 +42,17 @@ if ! tar -tzf "$B/redis-$TS.tar.gz" > /dev/null 2>&1; then
     exit 1
 fi
 
-tar -czf "$B/config-$TS.tar.gz" -C "$D" .env docker-compose.yml patches extra 2>/dev/null
+# 只打包实际存在的东西。切到自建镜像后 patches/ 可能已经不在了（补丁进了源码），
+# 而原来写死的 `patches` 会让 tar 以非零退出 —— 加上 set -e，脚本会在这里静默中止，
+# 后面的清理、chmod、"[备份完成]" 全都不执行，调用方只看到「备份失败」却没有原因。
+# 2026-09-10 部署演练就是栽在这里。
+ITEMS=""
+for f in .env docker-compose.yml docker-compose.rehearsal.yml patches extra; do
+    [ -e "$D/$f" ] && ITEMS="$ITEMS $f"
+done
+[ -n "$ITEMS" ] || { echo "[备份失败] $D 下没有任何可备份的配置文件。" >&2; exit 1; }
+# shellcheck disable=SC2086
+tar -czf "$B/config-$TS.tar.gz" -C "$D" $ITEMS
 
 find "$B" -name 'db-*.dump'        -mtime +14 -delete
 find "$B" -name 'config-*.tar.gz'  -mtime +14 -delete
