@@ -4,6 +4,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import 'video.js/dist/video-js.css'
 import './player-controls.css'
 import { shouldSendHlsCredentials, type CaptionTrack } from './videoSource'
+/* --- SYSU-SAM --- */
+import { useCampusNetwork } from '@services/media/useCampusNetwork'
+import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
+/* --- SYSU-SAM --- */
 
 const SEEK_SECONDS = 15
 
@@ -84,6 +88,13 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
   thumbnails,
   captions,
 }) => {
+  /* --- SYSU-SAM --- */
+  // 校外用户连不到内部媒体域名，<video> 只会长时间转圈。先探一次校园网可达性，
+  // 探不通就直接换成提示卡片。没配 HEAVY_MEDIA_URL 时这里恒为 reachable，
+  // 不发任何请求，行为与上游一致。
+  const campusNetwork = useCampusNetwork()
+  /* --- SYSU-SAM --- */
+
   const containerRef = useRef<HTMLDivElement>(null)
 
   const playerRef = useRef<any>(null)
@@ -317,6 +328,16 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
     }
     // Rebuild when the source changes, or when the user hits Retry (reloadNonce).
   }, [src, isHls, fallbackSrc, reloadNonce])
+
+  /* --- SYSU-SAM --- */
+  if (campusNetwork === 'unreachable') {
+    return (
+      <div className="learnhouse-player relative w-full h-full">
+        <CampusOnlyNotice variant="dark" />
+      </div>
+    )
+  }
+  /* --- SYSU-SAM --- */
 
   return (
     // h-full chain is required for the player's `fill` mode to size to the
