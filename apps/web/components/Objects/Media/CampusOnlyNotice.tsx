@@ -43,7 +43,7 @@ export default function CampusOnlyNotice({
             >
                 {t(
                     'sysu_campus_media.description',
-                    '请连接校园网或校园 VPN 后刷新页面。页面上的其它内容不受影响。'
+                    '请连接校园网或校园 VPN 后刷新页面。页面上的其它内容不受影响。如果浏览器询问是否允许访问本地网络，请选择「允许」。'
                 )}
             </p>
         </div>

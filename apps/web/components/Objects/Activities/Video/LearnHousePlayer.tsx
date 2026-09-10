@@ -329,16 +329,6 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
     // Rebuild when the source changes, or when the user hits Retry (reloadNonce).
   }, [src, isHls, fallbackSrc, reloadNonce])
 
-  /* --- SYSU-SAM --- */
-  if (campusNetwork === 'unreachable') {
-    return (
-      <div className="learnhouse-player relative w-full h-full">
-        <CampusOnlyNotice variant="dark" />
-      </div>
-    )
-  }
-  /* --- SYSU-SAM --- */
-
   return (
     // h-full chain is required for the player's `fill` mode to size to the
     // aspect-video parent (otherwise the video collapses to zero height).
@@ -349,6 +339,15 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
     // everywhere anyway.
     <div dir="ltr" className="learnhouse-player relative w-full h-full" data-vjs-player>
       <div ref={containerRef} className="w-full h-full" />
+      {/* --- SYSU-SAM --- */}
+      {campusNetwork === 'unreachable' && (
+        // 叠一层而不是提前 return：提前 return 会把 containerRef 摘掉，
+        // 而 video.js 实例还挂在 playerRef 上，dispose 的清理路径就断了。
+        <div className="absolute inset-0 z-20">
+          <CampusOnlyNotice variant="dark" />
+        </div>
+      )}
+      {/* --- SYSU-SAM --- */}
       {loadError && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 text-center text-white">
           <p className="text-sm opacity-90">This video couldn’t be loaded.</p>

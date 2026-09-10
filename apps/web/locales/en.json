@@ -6264,6 +6264,6 @@
   },
   "sysu_campus_media": {
     "title": "This content is available on campus only",
-    "description": "Connect to the campus network or campus VPN, then refresh the page. Everything else on this page works as usual."
+    "description": "Connect to the campus network or campus VPN, then refresh the page. Everything else on this page works as usual. If your browser asks whether to allow local network access, choose Allow."
   }
 }
