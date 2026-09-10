@@ -35,9 +35,19 @@ NAS 上的部署根目录是 `/volume1/docker/learnhouse`，compose 项目名 `l
 
 ## 切到自建镜像的步骤
 
-前提：`ghcr.io/godarrenw/learnhouse` 这个包默认是 **private**，NAS 拉不到。二选一：
-- 在 GitHub 的 Packages 页面把它改成 public（本项目基于 AGPL-3.0，公开镜像本就合规）；
-- 或者在 NAS 上 `docker login ghcr.io -u godarrenw -p <带 read:packages 的 PAT>`。
+前提：`ghcr.io/godarrenw/learnhouse` 已经是 **public**（fork 是公开仓库，包跟着公开），
+NAS 不用登录就能拉。2026-09-10 实测匿名取 manifest 返回 200：
+
+```sh
+TOK=$(curl -s "https://ghcr.io/token?scope=repository:godarrenw/learnhouse:pull&service=ghcr.io" \
+      | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://ghcr.io/v2/godarrenw/learnhouse/manifests/sysu-sam \
+  -H "Authorization: Bearer $TOK" -H 'Accept: application/vnd.oci.image.index.v1+json'
+```
+
+哪天把仓库或包转成 private，NAS 上就要
+`docker login ghcr.io -u godarrenw -p <带 read:packages 的 PAT>`。
 
 步骤：
 1. `sh /volume1/docker/learnhouse/backup.sh` —— 先备份，确认输出的字节数不是 0

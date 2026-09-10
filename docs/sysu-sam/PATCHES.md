@@ -33,6 +33,10 @@ git log --oneline 1.3.6..sysu-sam
 chunk）。改源文件即可，chunk 由构建自动产出。`diff` 上游 `zh.json` 与补丁版只有 8 处差异，
 全部是学生可见的品牌文案。
 
+上游 `dev` 对 `apps/web/locales/zh.json` 只有一个提交 `f05ffb2d`
+（retire the Unsplash picker），删掉了 `browse_unsplash` 和 `bg_unsplash` 两个键，
+与这 8 处不重叠，所以升级时这条补丁大概率连冲突都不会有。
+
 第 5 条：编译产物里唯一的改动是一处调用参数
 `getCourse(f, …)` → `getCourse("course_"+f+"/meta?slim=true", …)`。源码侧改为调用同仓库
 已有的 `getCourseMetadata(uuid, null, token, { slim: true })`，它拼出的 URL 正是
@@ -46,7 +50,7 @@ chunk）。改源文件即可，chunk 由构建自动产出。`diff` 上游 `zh.
 | 1 生图 | 上游仍是 Google-only（`dev` 分支未改） | **保留**。除非上游把生图接进 provider 抽象层 |
 | 2 语言码 | 上游 `dev` 仍是 `language_names.get(code, "English")` | **保留**，可考虑给上游提 PR |
 | 3 登录邮件 | 上游 `dev` 的 `f0bc5f85` 已从根上解决 | **升级到含该提交的版本后删掉**，见下 |
-| 4 语言包 | 上游 `dev` 的 `f0bc5f85` 顺带 de-brand 了 20 个语言包 | 升级后重新 diff，多半只剩「先进智造学堂」这个名字要留，其余可删 |
+| 4 语言包 | 上游 `dev` 只删了两个 Unsplash 键，没碰这 8 处品牌文案 | **保留** |
 | 5 作业弹窗 | 上游 `dev` 仍未修 | **保留**，应该给上游提 PR |
 
 关于第 3 条：上游 `f0bc5f85 feat(emails): white-label org-scoped system emails` 引入了
@@ -68,6 +72,9 @@ apps/api/src/services/orgs/users.py                |  11 +-
 apps/api/src/services/users/email_verification.py  |  14 +-
 apps/api/src/services/users/emails.py              | 180 ++++-
 ```
+
+（注意它改的是 `services/email/translations.py` 的邮件文案，不是 `apps/web/locales/*.json`
+前端语言包 —— 第 4 条不受它影响。）
 
 13 个文件、含新增模块和 nudges / invites 等多处改动，**cherry-pick 到 1.3.6 风险太高**，
 所以本次仍按移植补丁处理。等升级到包含它的上游版本，删掉 commit `ef5a9c68` 的改动，

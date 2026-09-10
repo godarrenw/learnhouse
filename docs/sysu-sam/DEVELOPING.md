@@ -71,8 +71,14 @@ NEXT_PUBLIC_LEARNHOUSE_HTTPS=False
 - `sysu-sam` 是主线，也是本 fork 的默认分支。push 到它就会触发镜像构建。
 - 新功能开 `feat/xxx` 分支，PR 合入 `sysu-sam`。PR 不会触发镜像构建
   （`build-image.yml` 只认 push），合入后才建。
-- 上游的 workflow（api-lint / api-tests / web-lint / lockfiles 等）都过滤了 `dev` 分支，
-  在本 fork 上不会跑。要用它们就手动 `gh workflow run`。
+- 上游的 workflow 大多过滤了 `dev` / `main` / `prod` 分支（api-lint、api-tests、web-lint、
+  lockfiles、build-community、release、notify-infra），在 `sysu-sam` 上不会跑。
+  两个例外已在本 fork 上 `gh workflow disable` 掉：
+  - `cli-tests.yaml` 的 push 触发器只有 paths 过滤、**没有分支过滤**，会在本分支上乱跑
+  - `e2e.yaml` 是 `schedule: 0 3 * * *`，定时任务只跑默认分支，而本 fork 的默认分支
+    就是 `sysu-sam`，缺 secrets 必失败还发邮件
+
+  `gh workflow list -R godarrenw/learnhouse --all` 能看到当前状态。
 - 要给上游提 PR，从 `1.3.6` 或 `upstream/dev` 另开干净分支，**不要**从 `sysu-sam` 开 ——
   那上面全是部署方的私有改动。第 2 条和第 5 条补丁是上游真 bug，值得回馈。
 
