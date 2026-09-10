@@ -41,6 +41,7 @@ from src.db.ext.checkin import (
 )
 from src.db.user_organizations import UserOrganization
 from src.db.users import AnonymousUser, APITokenUser, InternalUser, PublicUser, User
+from src.routers.ext.deps import verify_teacher
 from src.security.rbac.rbac import (
     authorization_verify_based_on_roles_and_authorship,
     authorization_verify_if_user_is_anon,
@@ -85,14 +86,21 @@ def _error(status_code: int, code: str, message: str) -> HTTPException:
 async def rbac_check_teacher(
     request: Request,
     course_uuid: str,
+    org_id: int,
     current_user: PublicUser | AnonymousUser | InternalUser | APITokenUser,
     db_session: AsyncSession,
 ) -> None:
-    """教师端：必须登录，且对该课程有 update 权限。
+    """教师端两道门。
 
-    这里刻意用 ``update`` 而不是 ``read`` —— 课程是公开的时候，``read`` 对任何
-    登录用户都成立，学生就能拉到全班名单和 IP。签到的每一个教师端接口（含只读的
-    实时状态、名单、历史）都按「能改这门课的人」来判。
+    第一道是组织级的 ``verify_teacher``（ext 公共依赖，判 Admin / Maintainer /
+    Instructor，口径与前端 ``useAdminStatus().isAdmin`` 一致）。这里用的是它的
+    非依赖形态 —— 依赖形态 ``require_teacher`` 会强制调用方在 query 里带
+    ``org_id``，而签到的每个接口都能从课程或会话反查出组织，没必要让前端多传
+    一个可被篡改的参数。
+
+    第二道是课程级的 ``update`` 权限。刻意用 ``update`` 而不是 ``read``：
+    课程公开时 ``read`` 对任何登录用户都成立，学生就能拉到全班名单和 IP。
+    签到的每一个教师端接口（含只读的实时状态、名单、历史）都按「能改这门课的人」判。
 
     API token 一律拒绝 —— 签到是课堂现场行为，没有无头集成的场景，
     放开只会扩大攻击面。
@@ -106,6 +114,7 @@ async def rbac_check_teacher(
             "API tokens cannot manage check-in sessions.",
         )
     await authorization_verify_if_user_is_anon(current_user.id)
+    await verify_teacher(current_user, org_id, db_session)
     await authorization_verify_based_on_roles_and_authorship(
         request, current_user.id, "update", course_uuid, db_session
     )
@@ -271,7 +280,9 @@ async def create_checkin_session(
     payload: CheckinSessionCreate,
 ) -> CheckinSessionRead:
     course = await _get_course_or_404(course_uuid, db_session)
-    await rbac_check_teacher(request, course_uuid, current_user, db_session)
+    await rbac_check_teacher(
+        request, course_uuid, course.org_id, current_user, db_session
+    )
 
     refresh_seconds = int(payload.refresh_seconds)
     if not REFRESH_SECONDS_MIN <= refresh_seconds <= REFRESH_SECONDS_MAX:
@@ -319,7 +330,9 @@ async def list_checkin_sessions(
     course_uuid: str,
 ) -> list[CheckinSessionRead]:
     course = await _get_course_or_404(course_uuid, db_session)
-    await rbac_check_teacher(request, course_uuid, current_user, db_session)
+    await rbac_check_teacher(
+        request, course_uuid, course.org_id, current_user, db_session
+    )
 
     statement = (
         select(CheckinSession)
@@ -345,7 +358,11 @@ async def get_live_state(
     checkin_session = await _get_session_or_404(session_uuid, db_session)
     course = await _get_course_by_id(checkin_session.course_id, db_session)
     await rbac_check_teacher(
-        request, course.course_uuid if course else "", current_user, db_session
+        request,
+        course.course_uuid if course else "",
+        checkin_session.org_id,
+        current_user,
+        db_session,
     )
 
     is_open = checkin_session.status == CheckinSessionStatus.OPEN.value
@@ -388,7 +405,11 @@ async def close_checkin_session(
     checkin_session = await _get_session_or_404(session_uuid, db_session)
     course = await _get_course_by_id(checkin_session.course_id, db_session)
     await rbac_check_teacher(
-        request, course.course_uuid if course else "", current_user, db_session
+        request,
+        course.course_uuid if course else "",
+        checkin_session.org_id,
+        current_user,
+        db_session,
     )
 
     if checkin_session.status != CheckinSessionStatus.CLOSED.value:
@@ -411,7 +432,11 @@ async def list_checkin_records(
     checkin_session = await _get_session_or_404(session_uuid, db_session)
     course = await _get_course_by_id(checkin_session.course_id, db_session)
     await rbac_check_teacher(
-        request, course.course_uuid if course else "", current_user, db_session
+        request,
+        course.course_uuid if course else "",
+        checkin_session.org_id,
+        current_user,
+        db_session,
     )
     return await _load_records(checkin_session.id or 0, db_session)
 

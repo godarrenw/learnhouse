@@ -124,14 +124,15 @@ test.describe('上课签到', () => {
     await login(page, TEACHER_EMAIL, TEACHER_PASSWORD)
     await page.goto(`${WEB}/dash/tools/checkin`)
 
-    await expect(page.getByTestId('checkin-course-select')).toBeVisible({
-      timeout: 30_000,
-    })
+    // 课程下拉由骨架的 CourseSelect 渲染在页头里（registry 的 courseScoped），
+    // 签到组件自己不再有选择框，所以这里按 aria-label 定位。
+    const courseSelect = page.getByRole('combobox', { name: /选择课程|Select a course/i })
+    await expect(courseSelect).toBeVisible({ timeout: 30_000 })
     // 等课程列表真的到了再截图，否则拍到的是「暂无课程」的中间态。
     // 判据是选中项有真实的 course_uuid，不是那个占位 option。
     await expect
       .poll(
-        async () => await page.getByTestId('checkin-course-select').inputValue(),
+        async () => await courseSelect.inputValue(),
         { timeout: 30_000 }
       )
       .toMatch(/^course_/)
@@ -140,7 +141,7 @@ test.describe('上课签到', () => {
         .getByTestId('checkin-sessions-table')
         .or(page.getByTestId('checkin-empty'))
     ).toBeVisible({ timeout: 30_000 })
-    courseUuid = await page.getByTestId('checkin-course-select').inputValue()
+    courseUuid = await courseSelect.inputValue()
     await page.getByTestId('checkin-title-input').fill('端到端验证课')
     await shot(page, '01-tool-form')
 

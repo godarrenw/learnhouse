@@ -12,7 +12,8 @@
 ## 二、数据模型与迁移
 
 迁移文件 `apps/api/migrations/versions/sam1checkin01_sysu_sam_checkin.py`，
-revision `sam1checkin01`，down_revision `b1c2d3e4f5a6`（撰写时仓库唯一的 head）。
+revision `sam1checkin01`，down_revision `b1c2d3e4f5a6`（rebase 到骨架之后仍是唯一的
+head——骨架没有加迁移）。
 
 | 表 | 关键字段 |
 |---|---|
@@ -39,7 +40,16 @@ revision `sam1checkin01`，down_revision `b1c2d3e4f5a6`（撰写时仓库唯一�
 | POST | `/sessions/{session_uuid}/close` | 结束，幂等 |
 | GET | `/sessions/{session_uuid}/records` | 名单；`?format=csv` 返回带 UTF-8 BOM 的 CSV（课程 / 场次 / 姓名 / 邮箱 / 签到时间 / 方式 / IP） |
 
-**权限这里刻意用 `update` 而不是 `read`**：课程公开时 `read` 对任何登录用户都成立，
+教师端每个接口过两道门：
+
+1. **组织级**：骨架的 `src/routers/ext/deps.verify_teacher`，判 Admin / Maintainer /
+   Instructor（口径就是 `rights.dashboard.action_access`，和前端
+   `useAdminStatus().isAdmin` 一致）。用的是它的非依赖形态——依赖形态
+   `require_teacher` 会强制调用方在 query 里带 `org_id`，而签到的每个接口都能从
+   课程或会话反查出组织，没必要让前端多传一个可被篡改的参数。
+2. **课程级**：对该课程有 `update` 权限。
+
+**第二道刻意用 `update` 而不是 `read`**：课程公开时 `read` 对任何登录用户都成立，
 按 `read` 判会让学生直接拉到全班名单和 IP。写这条测试时就是这么发现的
 （`test_regular_user_cannot_read_records`）。所有教师端接口，包括三个只读的，
 一律按「能改这门课的人」判。API token 一律拒绝。
@@ -120,7 +130,8 @@ B 在有效窗口内用自己的账号签上，系统看起来一切正常。这
 
 ### 后端 pytest
 
-`apps/api/src/tests/ext/test_checkin.py`，**36 条全过**：
+`apps/api/src/tests/ext/test_checkin.py`，**36 条全过**；连同骨架的 ext 测试
+一起跑是 **58 条全过**（`pytest src/tests/ext -q`）：
 
 ```
 $ cd apps/api && uv run pytest src/tests/ext/test_checkin.py -q
@@ -176,7 +187,7 @@ $ bunx eslint --max-warnings 0 components/SysuTools components/SysuCheckin \
 
 ### Playwright 端到端（本地预发栈）
 
-`apps/web/tests/ext/checkin.spec.ts`，**8 条全过**（24.6s，多次运行稳定）：
+`apps/web/tests/ext/checkin.spec.ts`，**8 条全过**（rebase 到骨架之后重跑，18.9s）：
 
 | # | 用例 | 截图 |
 |---|---|---|
@@ -233,18 +244,21 @@ bunx playwright test -c tests/ext/playwright.config.ts
 
 ## 七、已知限制与待办
 
-1. **`dash/tools/[tool]` 路由里放了一份占位实现**。这个文件属于骨架代理，
-   撰写本文时骨架还没合入。为了让功能真的能打开、让 e2e 跑得起来，
-   本分支带了一份占位版（UI_GUIDE 3.9 的标准页面壳 + 从 registry 取组件渲染），
-   文件头写了警示注释。**rebase 到骨架之后，如果骨架有自己的版本，删掉本分支这份用骨架的**，
-   签到侧不需要任何改动，URL 仍是 `/dash/tools/checkin`。
-   同理 `components/SysuTools/registry.ts` 和 `apps/api/src/routers/ext/__init__.py`
-   也是整份新建的骨架文件，rebase 时以骨架为准，只把签到那一行加回去。
+1. **已经 rebase 到骨架上并按骨架的约定改造完**（`33537025`）。具体接法：
+   - `registry.ts` 里加一条 `key: 'checkin'`、`courseScoped: true`、
+     `minRole: 'instructor'` 的条目，组件 `lazy` 导入；
+   - 课程下拉不再由签到组件自己渲染，改由路由页的 `CourseSelect` 统一提供，
+     组件从 `SysuToolProps.courseUuid` 收；
+   - 后端在 `src/routers/ext/__init__.py` 的 `SUBMODULES` 里加
+     `("checkin", "/checkin")` 一行，不再自己动 `src/router.py`；
+   - 文案并进骨架的 `locales/ext/{zh,en}.json`，挂在 `tools.checkin` 下，
+     组件里引用 `ext.tools.checkin.*`。
+   `dash/tools/[tool]/page.tsx`、`ToolPageHeader`、`CourseSelect` 全部用骨架的原件，
+   本分支一个字都没改。
 
-2. **i18n 的 ext 命名空间还没被加载**。文案在 `locales/ext/{zh,en}.json`，66 个 key
-   中英一一对应，但把这个包 merge 进 `lib/i18n.ts` 是骨架代理的活。在那之前，
-   组件里的 `t(key, { defaultValue: '中文' })` 会全部落到中文兜底——功能正常，
-   但英文界面暂时是中文。骨架合入后无需改组件。
+2. **i18n 已经通了**。骨架的 `lib/i18n.ts` 把 `locales/ext/*.json` 并进 `common`
+   的 `ext` 顶层 key，签到的 66 个 key 挂在 `tools.checkin` 下，中英一一对应
+   （脚本比对过，两边键集合完全相同）。组件里仍保留 `defaultValue` 中文兜底。
 
 3. **专注模式下没有签到入口条**。学生端入口条挂在课程页和活动页的**普通模式**。
    活动页的专注模式是 `fixed inset-0` 的独立布局，插横条会打乱它的排版，
@@ -254,9 +268,14 @@ bunx playwright test -c tests/ext/playwright.config.ts
    这点请求量可以忽略；SSE 在 NAS 反代加后续 Cloudflare 隧道的链路上要额外处理
    缓冲和超时断连，收益不抵成本。
 
-5. **迁移可能出现多头**。`sam1checkin01` 的 down_revision 是当时唯一的 head
-   `b1c2d3e4f5a6`。学情、作业工具如果也从同一个 head 开分支，合并后会有多个 head，
+5. **迁移可能出现多头**。`sam1checkin01` 的 down_revision 是 `b1c2d3e4f5a6`。
+   学情、作业工具如果也从同一个 head 开分支加迁移，合并后会有多个 head，
    需要集成时补一条 merge migration。
+
+   另外：本地预发栈的库原本没有 `alembic_version` 行（它是从备份恢复的，表由
+   `create_all` 建）。验证时 stamp 过一次，**验完已经 stamp 回 `b1c2d3e4f5a6`**，
+   两张签到表留着不删——这样还没合入本分支的功能分支跑 `upgrade head` 不会报
+   找不到 revision，而合入本分支的人跑一遍也是无害的（迁移会跳过已存在的表）。
 
 6. **投屏页是深色的**。这是整个 fork 里唯一不用后台灰白配色的页面，理由是要在教室
    投影上从最后一排看清。用 `fixed inset-0` 盖住左侧菜单做到全屏无菜单，
