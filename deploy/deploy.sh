@@ -91,19 +91,34 @@ esac
 # 在部署目录里跑 compose 的统一入口，两个模式共用
 dc() { remote_sudo "cd ${DEPLOY_DIR} && ${DC} -p ${COMPOSE_PROJECT} ${DC_FILES} $*"; }
 
+# 在**仓库 deploy/ 目录**里跑 compose config。
+# compose 里写了 env_file: .env，而仓库里没有 .env（含密钥，不入库），
+# 直接跑会因为找不到 .env 报错，所以用一个临时空 .env 顶一下再删掉。
+repo_compose_config() {
+  local rc=0 tmp=0
+  [ -f .env ] || { : > .env; tmp=1; }
+  ${DC} ${DC_FILES} config "$@" || rc=$?
+  [ "$tmp" = 1 ] && rm -f .env || true
+  return $rc
+}
+
 log "TARGET=${TARGET}  部署目录=${DEPLOY_DIR}  项目=${COMPOSE_PROJECT}"
 
 # ==== 1. 预检 ================================================================
 log "预检…"
-[ -z "$(git status --porcelain)" ] || die "工作区不干净，先提交或 stash"
+# 生产必须从干净的工作区部署，否则 deploy.log 里记的 commit 对不上实际部署的内容。
+# 演练时允许带脏工作区（边改边试），但仅限 TARGET=local，且要显式设 ALLOW_DIRTY=1。
+if [ -n "$(git status --porcelain)" ]; then
+  if [ "$TARGET" = local ] && [ "${ALLOW_DIRTY:-0}" = 1 ]; then
+    log "⚠️ 工作区不干净，ALLOW_DIRTY=1 且 TARGET=local，继续（commit 号仅供参考）"
+  else
+    die "工作区不干净，先提交或 stash"
+  fi
+fi
 COMMIT=$(git rev-parse --short HEAD)
 log "将要部署的 commit：${COMMIT}"
 
-# compose 里写了 env_file: .env，而仓库里没有 .env（含密钥，不入库），
-# 直接 config 会因为找不到 .env 报错。用一个临时空 .env 过语法检查。
-_tmpenv=0; [ -f .env ] || { : > .env; _tmpenv=1; }
-${DC} ${DC_FILES} config -q || { [ "$_tmpenv" = 1 ] && rm -f .env; die "本地 compose 语法错"; }
-[ "$_tmpenv" = 1 ] && rm -f .env || true
+repo_compose_config -q || die "本地 compose 语法错"
 
 # 仓库里已经没有 patches/ 了；如果它又出现，说明有人在走老的 bind-mount 模型
 [ ! -d patches ] || die "deploy/ 下不该有 patches/，补丁应该在源码里（见 docs/sysu-sam/PATCHES.md）"
@@ -128,10 +143,25 @@ check_containers() {   # 打印不健康的容器名，全好则无输出
     [ "$st" = running ] || echo "${c}=${st}"
   done
 }
+# 重建之后不能只采样一次容器状态：nginx 的 healthcheck 是 interval 30s 且没有
+# start_period，刚 recreate 完必然处于 starting，即使它其实已经在正常服务。
+# 所以这里要轮询等待，starting 视为「还没到时候」，直到全好或超时。
+wait_containers() {   # $1=超时秒数，默认 240
+  local deadline=$(( $(date +%s) + ${1:-240} )) bad
+  while :; do
+    bad=$(check_containers)
+    [ -z "$bad" ] && return 0
+    [ "$(date +%s)" -ge "$deadline" ] && { echo "$bad"; return 1; }
+    sleep 5
+  done
+}
+
 if [ "${SKIP_PREFLIGHT_HEALTH:-0}" != 1 ]; then
-  BAD=$(check_containers)
-  [ -z "$BAD" ] || die "部署前就有容器不健康，先修好再部署：${BAD}"
-  log "预检：五个容器都正常"
+  # 给 120s 缓冲：上一次操作刚重建过容器时会短暂处于 starting，那不算「坏」。
+  # 到点还没稳定成 healthy 才拒绝部署 —— 本来就不健康时不要部署，
+  # 否则事后分不清是部署引入的还是原本就坏的。
+  if BAD=$(wait_containers 120); then log "预检：五个容器都正常"
+  else die "部署前就有容器不健康，先修好再部署：${BAD}"; fi
 fi
 
 # ==== 1b. 按 diff 推断受影响服务（保守版）====================================
@@ -175,8 +205,19 @@ log "回滚点：${ROLLBACK}"
 # 生产模式从 ghcr.io/godarrenw/learnhouse 拉（公开包，不用登录）。
 # 建议 compose 里钉 :sysu-sam-<sha7> 而不是浮动的 :sysu-sam，回滚只需换回上一个 tag。
 if [ -n "$DRY_IMAGE" ]; then
-  log "⚠️ DRY_IMAGE=${DRY_IMAGE}，强行改写 app 镜像（演练用）"
-  remote "cd ${DEPLOY_DIR} && sed -i.bak 's#^\\( *image: \\).*learnhouse.*#\\1${DRY_IMAGE}#' docker-compose.rehearsal.yml"
+  # 故障注入（只在演练用）：把 app 镜像换成别的，验证健康检查失败后能自动回滚。
+  # 必须改**仓库里**这份，因为第 4 步 sync_files 会用仓库的文件覆盖部署目录；
+  # 只改部署目录的话会被同步覆盖掉，等于没注入。改完用 trap 保证一定还原。
+  [ "$TARGET" = local ] || die "DRY_IMAGE 只允许在 TARGET=local 下使用"
+  log "⚠️ DRY_IMAGE=${DRY_IMAGE}，把 app 镜像改写成它（故障注入）"
+  cp docker-compose.rehearsal.yml "/tmp/.lh_reh_orig.$$"
+  trap 'cp "/tmp/.lh_reh_orig.$$" "'"$REPO_DEPLOY_DIR"'/docker-compose.rehearsal.yml"; rm -f "/tmp/.lh_reh_orig.$$"; echo "[已还原仓库里的 docker-compose.rehearsal.yml]"' EXIT
+  python3 - "$DRY_IMAGE" <<'PYEOF'
+import re, sys, pathlib
+img = sys.argv[1]
+p = pathlib.Path('docker-compose.rehearsal.yml')
+p.write_text(re.sub(r'^(\s*image:\s*).*learnhouse.*$', r'\g<1>' + img, p.read_text(), count=1, flags=re.M))
+PYEOF
 fi
 if [ "$TARGET" = prod ]; then
   # TODO: pull 之前先查这个 commit 的构建成功了没，别闷头拉一个还没推上去的 tag：
@@ -184,7 +225,12 @@ if [ "$TARGET" = prod ]; then
   log "拉取新镜像…"
   dc "pull learnhouse-app" || die "拉镜像失败"
 else
-  IMG=$(${DC} ${DC_FILES} config 2>/dev/null | awk '/learnhouse-app:/{f=1} f&&/image:/{print $2; exit}')
+  # 注意不能写成 `config | awk '…{exit}'`：awk 提前 exit 会让上游 compose 收到
+  # SIGPIPE，配合 set -o pipefail 整条管道非零，脚本会在这里无声中止。
+  # 先把 config 落到变量里，再在变量上取值。
+  CFG=$(repo_compose_config 2>/dev/null) || die "compose config 失败"
+  IMG=$(printf '%s\n' "$CFG" | awk '/learnhouse-app:/{f=1} f&&/image:/{print $2; exit}')
+  [ -n "$IMG" ] || die "从 compose config 里取不到 app 镜像名"
   log "演练镜像：${IMG}"
   remote "${DOCKER} image inspect ${IMG} >/dev/null 2>&1" \
     || die "本机没有镜像 ${IMG}（演练不重建镜像，请先 docker build 或换 tag）"
@@ -202,7 +248,10 @@ sync_files || die "同步失败"
 # 必须 --force-recreate：extra/nginx.prod.conf 是单文件 bind-mount，钉的是 inode，
 # tar 解包换了新 inode，运行中的容器看到的还是旧文件；reload / restart 都没用。
 log "重建：${SERVICES}"
-dc "up -d --force-recreate ${SERVICES}" || die "重建失败"
+# 重建失败**不能直接 die**：那样会把服务留在半新半旧的状态没人收拾。
+# 记下失败，照样走后面的健康检查与回滚流程。
+recreate_ok=1
+dc "up -d --force-recreate ${SERVICES}" || { recreate_ok=0; log "重建命令返回失败，继续走健康检查与回滚"; }
 
 # ==== 6. 健康检查 ============================================================
 # 轮询必须在**一条** SSH 连接里做完。这台 NAS 对短时间内重复建连会直接拒，
@@ -218,15 +267,14 @@ POLL="for i in \$(seq 1 48); do
    if [ \"\$sc\" = 1 ] && [ \"\$h\" = 200 ]; then echo HEALTHY; exit 0; fi;
    sleep 5;
  done; exit 1"
-if remote "$POLL" 2>/dev/null | grep -q HEALTHY; then ok=1; fi
+if [ "$recreate_ok" = 1 ] && remote "$POLL" 2>/dev/null | grep -q HEALTHY; then ok=1; fi
 [ "$ok" = 1 ] && log "HTTP 通过：/ 返回 200，orgs/slug/default 的 JSON 里 slug == default" \
              || log "HTTP 检查未通过"
 
 # 容器状态：四个带 healthcheck 的要 healthy，ssr-fwd 只看 running
 if [ "$ok" = 1 ]; then
-  log "健康检查（容器状态）…"
-  BAD=$(check_containers)
-  if [ -n "$BAD" ]; then ok=0; log "容器状态异常：${BAD}"; else log "五个容器状态正常"; fi
+  log "健康检查（容器状态，最多等 240s）…"
+  if BAD=$(wait_containers 240); then log "五个容器状态正常"; else ok=0; log "容器状态异常：${BAD}"; fi
 fi
 
 # ==== 6b. 镜像内补丁校验（换镜像的部署必做）==================================
@@ -264,7 +312,7 @@ if [ "$ok" != 1 ]; then
   log "回滚后复跑健康检查…"
   rb=0
   if remote "$POLL" 2>/dev/null | grep -q HEALTHY; then
-    BAD=$(check_containers); [ -z "$BAD" ] && rb=1 || log "回滚后容器仍异常：${BAD}"
+    if BAD=$(wait_containers 240); then rb=1; else log "回滚后容器仍异常：${BAD}"; fi
   fi
   write_log() { :; }
   if [ "$rb" = 1 ]; then
