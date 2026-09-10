@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import Modal from '@components/Objects/StyledElements/Modal/Modal'
 import NewAssignment from '@components/Objects/Modals/Activities/Create/NewActivityModal/AssignmentActivityModal'
-import { getCourse } from '@services/courses/courses'
+import { getCourseMetadata } from '@services/courses/courses'
 import { getCourseThumbnailMediaDirectory } from '@services/media/media'
 import { getUriWithOrg } from '@services/config/config'
 import { ArrowLeft, BookOpen, Layers, FolderPlus, ChevronRight, PlusCircle, Backpack } from 'lucide-react'
@@ -38,7 +38,17 @@ export default function NewAssignmentModal({
 
   const { data: courseDetail, isLoading: courseLoading } = useQuery({
     queryKey: ['assignment-course-structure', selectedCourseUuid],
-    queryFn: () => getCourse(selectedCourseUuid as string, null, access_token),
+    // PATCH(nas): 上游此处调 getCourse()，即 GET /courses/{uuid}，有两个问题：
+    //   1. selectedCourseUuid 已被 cleanCourseUuid() 剥掉 course_ 前缀，而后端按完整
+    //      uuid 精确匹配 → 404；
+    //   2. 即使前缀正确，该接口返回 CourseRead，模型中本就没有 chapters 字段。
+    // 两者叠加使 courseDetail?.chapters 恒为空，新建作业弹窗对任何课程都提示
+    // 「此课程尚无章节」。改为请求 /courses/course_{uuid}/meta?slim=true
+    // （FullCourseRead，含章节，与课程编辑器同源），slim 只取导航结构不取正文。
+    queryFn: () =>
+      getCourseMetadata(selectedCourseUuid as string, null, access_token, {
+        slim: true,
+      }),
     enabled: !!selectedCourseUuid && !!access_token && open,
     staleTime: 30_000,
   })
