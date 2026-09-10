@@ -71,9 +71,9 @@ services:
   #           docker-compose up -d --force-recreate cloudflared。
   #
   # 注意几件事：
-  #   - depends_on 只挂 nginx。它按容器名/服务名解析 nginx，nginx 一旦被重建，
-  #     IP 会变，cloudflared 需要跟着重建（compose 不会自动连带重建 dependents）。
-  #     部署脚本里 nginx 与 cloudflared 要一起 --force-recreate，见 DEPLOY.md。
+  #   - depends_on 只挂 nginx。nginx 重建后容器 IP 会变，但 cloudflared 每次新建
+  #     连接都会重新解析容器名，旧连接失败后自动重拨，几秒内自愈，
+  #     **通常不需要跟着重建**。只有 deploy 之后校外持续 502 才手工重建它。
   #   - 没有 healthcheck（cloudflared 镜像里没有 shell 也没有 curl）。
   #     **不要**把它加进 deploy.sh 的 HEALTHY_CONTAINERS，否则预检永远过不了。
   #     验隧道状态看 `docker logs learnhouse-cloudflared-nas` 里的
@@ -84,9 +84,17 @@ services:
     image: cloudflare/cloudflared:2026.9.0
     container_name: learnhouse-cloudflared-nas
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
-    env_file:
-      - .env
+    # 刻意**不写 env_file: - .env**。cloudflared 是直面 CF 边缘的容器，
+    # 把整个 .env 灌进去等于让 POSTGRES_PASSWORD、JWT 密钥、AI / Resend 的 key
+    # 全部躺在它的环境变量里（docker inspect 就能看到），它一个都用不上。
+    # 下面 ${CF_TUNNEL_TOKEN} 走的是 compose 自己的变量插值（读部署目录的 .env），
+    # 与 env_file 无关，所以删掉 env_file 不影响 token 注入。
+    #
+    # token 用 TUNNEL_TOKEN 环境变量传而不是 --token 参数：
+    # 命令行参数会出现在宿主机的 ps 输出里。
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
     depends_on:
       nginx:
         condition: service_healthy

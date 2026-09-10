@@ -200,6 +200,11 @@ app 冷启要跑迁移，超时给到 240s（生产 `start_period` 是 180s）�
 `docker-compose config -q` 在 `CF_TUNNEL_TOKEN` 未设时给的是 warning 不是 error
 （本地用 compose v2 确认过），所以 `deploy.sh` 第 1 步的语法预检不会因为它没填而失败。
 
+cloudflared 服务**刻意没有 `env_file: - .env`**：它是直面 CF 边缘的容器，
+灌整个 `.env` 等于把数据库密码、JWT 密钥、AI 与 Resend 的 key 都塞进它的环境变量，
+而它一个都用不上。`${CF_TUNNEL_TOKEN}` 走的是 compose 自己的变量插值
+（读部署目录下的 `.env`），与 `env_file` 无关，已用 `docker compose config` 验过插值仍生效。
+
 ### cloudflared 不在 `deploy.sh` 的重建清单里
 
 脚本里 `SERVICES` 恒为 `learnhouse-app ssr-fwd nginx`，**不含 cloudflared**。这是故意的，
@@ -210,13 +215,14 @@ app 冷启要跑迁移，超时给到 240s（生产 `start_period` 是 180s）�
    sudo docker-compose -p learnhouse-nas pull cloudflared
    sudo docker-compose -p learnhouse-nas up -d cloudflared
    ```
-2. **以后每次 `deploy.sh` 之后都要重建它**。cloudflared 按容器名解析 nginx，
-   而 `deploy.sh` 每次都会 `--force-recreate nginx`，nginx 的容器 IP 随之改变；
-   compose 的 `depends_on` 不会连带重建依赖方，所以：
+2. **`deploy.sh` 之后通常不用管它**。`deploy.sh` 每次都会 `--force-recreate nginx`，
+   nginx 的容器 IP 会变，但 cloudflared 每次新建连接都重新解析容器名，
+   旧连接失败后自动重拨，几秒内自愈。**没必要每次都重建它** ——
+   每重建一次，校外用户就多断一次。
+   只有 deploy 之后校外持续 502 / 超时才手工来一下：
    ```sh
    sudo docker-compose -p learnhouse-nas up -d --force-recreate cloudflared
    ```
-   漏了这一步的表现是：网站在校内正常，校外 502 或超时。
 
 ### cloudflared 不能进 `HEALTHY_CONTAINERS`
 

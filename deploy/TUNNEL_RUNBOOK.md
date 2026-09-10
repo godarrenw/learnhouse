@@ -23,10 +23,10 @@
 | 3 | **DSM 管理员账号密码** | acme.sh 的 `synology_dsm` 部署钩子把证书装进 DSM | 若开了两步验证，还要 OTP 或「信任设备」配置，见 §5.2 |
 | 4 | **NAS 的 SSH / ContainerManager 访问** | 改 `.env`、跑 `deploy.sh`、看容器日志 | 现有部署流程已有 |
 | 5 | **一个无课时间窗口** | 阶段一改 DNS 时有 1~5 分钟解析切换；阶段二重建 nginx 约 10 秒 | 建议避开上课与作业截止时段 |
-| 6 | **两条待核实信息的答案** | 决定阶段二是否会静默失效 | 见 §0.1 |
+| 6 | **三条待核实信息的答案** | 决定阶段二是否会静默失效、甚至是否可行 | 见 §0.1 |
 | 7 | **给老师的告知**（100 MB 上传限制） | 阶段一上线当天 | 文案见 §7 |
 
-### 0.1 开工前先问清楚的两件事
+### 0.1 开工前先问清楚的三件事
 
 **（a）DSM 反向代理转发到 8088 时保不保留原始 Host？**
 在 DSM「控制面板 → 登录门户 → 高级 → 反向代理」看那条 learn 规则，或上线后在 nginx 日志里看 `$http_host`。
@@ -34,7 +34,10 @@
 分流静默不生效（不会成环，配置里用的是正向白名单）。真是这样就要在 DSM 侧把
 「传递原始主机头 / Preserve Host」打开。
 
-**（b）校园 DNS 能不能做 split-horizon？**
+**（b）校内 Chrome 会不会弹「允许访问本地网络」？**
+见 §3 第 5 条。**这条如果成立，会影响阶段二的整体可行性**，请在阶段二动手前实测一次。
+
+**（c）校园 DNS 能不能做 split-horizon？**
 如果学校网络中心愿意在校园 DNS 上把 `learn.sysu-sam.com` 解析到 `172.25.5.162`（校外仍走 CF），
 那么校内全程走局域网、没有延迟损失、也没有 100 MB 上传限制，**整个 media 域名方案可以不做**。
 这是技术上最优解，值得先问一句再动手。
@@ -170,7 +173,7 @@ Public hostname 和隧道本身可以留着不删，没有流量就是闲置的�
 ## 阶段二：media 域名 + 媒体分流
 
 **前置**：阶段一稳定跑几天（**不要拖到几周**——让全部视频长期经 CF 与自助版条款有冲突）；
-media 证书就绪（§5）；DSM 反代规则加好（§6）；§0.1(a) 已确认。
+media 证书就绪（§5）；DSM 反代规则加好（§6）；§0.1 的 (a) (b) 都已确认。
 
 ### 2.1 DNS
 
@@ -196,8 +199,9 @@ map $host $media_split_enabled {
 这个文件是单文件 bind-mount，Docker 钉的是宿主机上那个 inode，tar 解包写的是新 inode，
 运行中的容器看到的还是旧的。
 
-**nginx 重建之后 cloudflared 要跟着重建**（它按名字解析 nginx，nginx 换了容器 IP 会变，
-compose 不会自动连带重建依赖方）：
+nginx 重建后 **cloudflared 通常不用动**：它每次新建连接都重新解析容器名，
+旧连接失败后自动重拨，几秒内自愈；每重建一次反而让校外用户多断一次。
+只有校外持续 502 / 超时才手工来一下：
 
 ```sh
 ssh <nas> 'cd /volume1/docker/learnhouse && sudo docker-compose -p learnhouse-nas up -d --force-recreate cloudflared'
@@ -216,6 +220,8 @@ ssh <nas> 'cd /volume1/docker/learnhouse && sudo docker-compose -p learnhouse-na
 | 7 | 直接访问 `https://media.sysu-sam.com/` | 404，不暴露任何页面 |
 | 8 | 无痕窗口直接访问**非公开**课程的 media 直链 | 401，鉴权仍生效 |
 | 9 | `curl -I -H 'Range: bytes=0-1023' https://media.sysu-sam.com/content/…/video/….mp4` | 206 + `Content-Range` |
+| 10 | **校内用 Chrome 首次播放视频** | 观察有没有「允许访问本地网络」权限弹窗（见 §3 第 5 条）。点允许后能正常播放；若被拦，先别推广，回头看 §3 第 5 条的两个缓解 |
+| 11 | 校内 Safari / Firefox 播同一个视频 | 正常。用来区分「是不是只有 Chromium 系受影响」 |
 
 第 1、2、3、9 条在本地已经用真实上游验过一遍（`TUNNEL_LOCAL_TEST.md`），
 校内这次主要是确认证书、DSM 反代、Host 传递这三段。
@@ -245,6 +251,26 @@ sudo docker-compose -p learnhouse-nas up -d --force-recreate nginx cloudflared
 4. **自助版条款对视频分发有限制。** CF 的 self-serve 条款限制用 CDN 分发视频和大比例非 HTML 内容，
    免费账号有被警告或限速的先例。**阶段一让全部视频经过 CF 是过渡状态，不应长期停留**，
    这也是阶段二紧接着排的原因。
+
+5. **浏览器对「公网页面访问内网地址」的限制（阶段二特有，务必先核实）。**
+   橙云之后 `learn.sysu-sam.com` 解析到 CF 的公网 IP，页面属于 **public** 地址空间；
+   而 `media.sysu-sam.com` 指向 `172.25.5.162`，属于 **private**。
+   Chromium 系（Chrome / Edge）近年在推 Local Network Access：公网页面访问本地网络地址
+   需要用户点一次「允许」，拒绝就直接被拦。真要生效的话，影响是双重的：
+   校内用户第一次播视频 / 开 PDF 会弹权限框，而且 `useCampusNetwork` 的探测本身也会被拦，
+   **把校内用户误判成校外**。
+
+   **这条我没有实测过，具体从哪个版本默认开启也不确定，所以阶段二开始前必须先核实一次**：
+   在校内用当前版 Chrome 打开一个会 302 到 media 的视频，看有没有权限弹窗；
+   或者到 `chrome://flags` 搜 Local Network Access 看当前状态。
+
+   两个缓解办法：
+   - **（首选）走设计文档 §9.3 的校园 DNS split-horizon**：让校园 DNS 把
+     `learn.sysu-sam.com` 也解析到 `172.25.5.162`。两端同属 private 地址空间，
+     这个限制就不存在了，而且校内全程走局域网、没有 100 MB 上传限制。
+     **如果这条限制被证实存在，§9.3 就不再是「更优解」，而是必要项。**
+   - 接受一次性弹窗，并在提示文案里加一句「如果浏览器询问是否允许访问本地网络，请选择允许」
+     （`feat/tunnel-web` 分支的 `CampusOnlyNotice.tsx` 与 i18n 文案）。
 
 WebSocket（`/collab` 白板）经隧道没有问题。
 
