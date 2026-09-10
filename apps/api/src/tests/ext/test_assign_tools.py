@@ -407,6 +407,34 @@ async def test_draft_reports_extra_kinds(
     assert any("多出了" in w for w in out["validation"]["warnings"])
 
 
+async def test_draft_normalizes_invented_enum_values(
+    db, org, course, chapter, page_activity, admin_user, mock_request,
+    bypass_ext_rbac,
+):
+    """模型真的会自己发明枚举值 —— 线上实测两次都把 grading_type 填成 MIXED。
+
+    这种字段和题目内容无关，不该让整份 spec 报废；改回默认值并在警告里说清原值。
+    """
+    reply = (
+        '{"name": "x", "grading_type": "MIXED", "solution_reveal": "ON_SUBMIT",'
+        ' "due_date": "下周三", "tasks": ['
+        '{"kind": "quiz", "questions": [{"text": "?", "options": ['
+        '{"text": "A", "correct": true}, {"text": "B", "correct": false}]}]}]}'
+    )
+    with patch.object(draft_svc.llm_mod, "chat_completion",
+                      new=AsyncMock(return_value=reply)):
+        out = await draft_svc.draft_from_activity(
+            mock_request, course.course_uuid, page_activity.activity_uuid,
+            admin_user, db, kinds=["quiz"], model="m",
+        )
+    assert out["spec"]["grading_type"] == "NUMERIC"
+    assert out["spec"]["solution_reveal"] == "NEVER"
+    assert out["spec"]["due_date"] is None
+    fixed = [w for w in out["validation"]["warnings"] if "改回默认值" in w]
+    assert len(fixed) == 1
+    assert "MIXED" in fixed[0] and "ON_SUBMIT" in fixed[0] and "下周三" in fixed[0]
+
+
 async def test_draft_retries_once_then_gives_up(
     db, org, course, chapter, page_activity, admin_user, mock_request,
     bypass_ext_rbac,
