@@ -38,6 +38,31 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 #: 前端据此提示「这个站点没验证过，请自己在浏览器里看一眼」。
 CONFIRMED_PROVIDERS = {"bilibili"}
 
+#: 短链解析时**每一跳**都必须落在这些域（或其子域）上。
+#:
+#: 为什么要限：`resolve_b23_link` 是服务端发起的请求，跟随的是第三方返回的
+#: Location。b23.tv 的短链内容不由我们控制，一条被做过手脚的短链可以把服务端
+#: 引到内网地址上去（SSRF）。限死在 bilibili 自己的域里，跳到别处就中止。
+ALLOWED_REDIRECT_HOSTS = frozenset({
+    "b23.tv",
+    "bilibili.com",
+    "m.bilibili.com",
+    "www.bilibili.com",
+    "player.bilibili.com",
+})
+
+
+def _host_allowed(url: str) -> bool:
+    """这一跳的主机在不在白名单里（含子域）。取不出主机就当不允许。"""
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    return any(host == allowed or host.endswith("." + allowed)
+               for allowed in ALLOWED_REDIRECT_HOSTS)
+
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """让 urllib 在 3xx 处停下，我们只要 Location 头，不想真的把页面拉下来。"""
@@ -88,12 +113,21 @@ def resolve_b23_link(url, timeout=8):
             % (type(last).__name__, str(last)[:120]))
 
     cur, hops = url.strip(), 0
+    if not _host_allowed(cur):
+        raise EmbedError("只解析 b23.tv / bilibili.com 的短链，收到的是：%s" % cur[:120])
     while hops < 3:
         hops += 1
         loc = _one_hop(cur)
         if not loc:
             break
         cur = urllib.parse.urljoin(cur, loc)
+        # 每一跳都查白名单。跳出 bilibili 的域就中止 —— 这是服务端发起的请求，
+        # 跟着一条被做过手脚的短链走进内网就是 SSRF。
+        if not _host_allowed(cur):
+            raise EmbedError(
+                "这条短链跳到了 bilibili 以外的地址（%s），已中止。"
+                "请在浏览器里打开它，确认之后把 https://www.bilibili.com/video/BV... "
+                "的完整地址贴过来。" % cur[:120])
         if BILI_BV_RE.search(cur) or BILI_AV_RE.search(cur) or BILI_PLAYER_RE.search(cur):
             return cur
     raise EmbedError(

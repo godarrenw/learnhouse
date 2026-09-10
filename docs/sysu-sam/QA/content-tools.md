@@ -12,25 +12,24 @@
 ```sh
 cd apps/api
 uv sync
-uv pip install greenlet          # 见下面「环境坑」
-uv run --no-sync pytest src/tests/ext/test_content_tools.py -q
-uv run --no-sync ruff check src/services/ext src/routers/ext src/tests/ext
+uv run pytest src/tests/ext -q
+uv run ruff check src/services/ext src/routers/ext src/tests/ext
 ```
 
 | 项 | 结果 |
 |---|---|
-| pytest（`src/tests/ext` 全量，含骨架与学情的用例） | 134 passed |
+| pytest（`src/tests/ext` 全量，含骨架与学情的用例） | 153 passed |
 | ruff | All checks passed |
 
-本分支贡献 86 条：73 条纯逻辑（不碰库不碰网），13 条用 conftest 的内存 SQLite
+本分支贡献 105 条：92 条纯逻辑（不碰库不碰网），13 条用 conftest 的内存 SQLite
 真跑 service 调用（导入导出往返 7 条、虚拟助教追加 6 条）。
 
-**环境坑（其他代理也会踩）**：`uv sync` 装不上 `greenlet`，但 SQLAlchemy 的
-async 引擎必须要它，缺了所有碰数据库的测试都报
-`ValueError: the greenlet library is required`。这不是本分支引入的 ——
-`src/tests/services/test_activities_service.py` 在干净的 sysu-sam 上同样 21 个
-ERROR。手工 `uv pip install greenlet` 之后那 21 条也全过了。后续跑测试要加
-`--no-sync`，否则 `uv run` 会把 greenlet 再卸掉。
+**greenlet 已经修好了。** 原先 `uv sync` 装不上它（marker 在 Apple Silicon 的
+macOS 上把它跳过），而 SQLAlchemy 的 async 引擎运行时必须要它，症状是所有碰
+数据库的测试报 `ValueError: the greenlet library is required`、纯逻辑测试却全过，
+看起来像"某几个测试写坏了"。现在 `greenlet>=3.3.1` 已经显式钉进
+`apps/api/pyproject.toml`，`uv sync` 一次就有，**不用再加 `--no-sync`**。
+跑法和说明也写进了 `docs/sysu-sam/DEVELOPING.md`。
 
 ### 测了什么
 
@@ -75,16 +74,59 @@ PDF 逐条进 `skipped` 而不是静默丢、缺图只记警告不让整页失�
 再导出来 README 有目录和「只能还原内容页和整页嵌入」的说明、
 导出的包再解析回去结构一致、课程不存在报 404。
 
+### 安全相关的三处（集成审查要求）
+
+**一、短链跳转白名单。** `resolve_b23_link` 是**服务端**发起的请求，跟的是第三方
+返回的 Location。一条被做过手脚的短链可以把服务端引到内网地址上去（SSRF）。
+现在入口地址和**每一跳**都必须落在 `b23.tv` / `bilibili.com` / `m.bilibili.com` /
+`www.bilibili.com` / `player.bilibili.com` 或它们的子域上，跳出去就中止并报错。
+测试钉死了两件事：子域算通过（`space.bilibili.com`），而 `bilibili.com.evil.com`
+这种后缀相似但不是子域的**不算**通过；`127.0.0.1`、`169.254.169.254`、`localhost`
+一律拒。另有一条打桩测试模拟"第一跳被引到元数据服务地址"，断言中止。
+
+**二、zip 解压大小按实际字节计。** 原来用 `ZipInfo.file_size` 预检总大小，
+但那是压缩包自己写的数字 —— 伪造成 1 就能绕过闸门，然后 `zf.read()` 一把把几个 G
+解进内存（zip 炸弹）。现在改成 `zf.open()` 流式读、边读边数，超出剩余额度立刻中止。
+两条测试：一条把上限临时调小验证按实际字节计，一条确认伪造的 `file_size` 骗不过去。
+
+**三、导出按课程 update 权限判，不按 read。** 导出包里含作业的**参考答案**，
+能拿到答案的人必须是能改这门课的人，"能看这门课"不够。
+
+### 作业导出（完整版）
+
+`services/ext/content_tools/assignments_md.py`。**故意不复用作业工具的模块** ——
+那条线还在动，互相 import 会把两个功能的发布节奏绑死。这里只读 `assignment` 和
+`assignmenttask` 两张上游表。
+
+六种题型各有渲染分支：选择题（列选项并标出正确项，超过 26 个选项退回数字标号）、
+填空题、简答题（含匹配方式）、数值题（含单位与容差）、编程题（初始代码 + 参考解法）、
+文件提交（说明没有标准答案）。认不出的题型不炸，写一句"请到网页上查看"。
+没填答案的说"没有填参考答案"而不是留空；题干整个是空的（本地库里就有这种数据）
+写一句"这道题还没有录入内容"，免得老师以为导出坏了。
+
+正文最上方有一行 `> [!warning]` 说明这份导出含参考答案、发给学生前先删。
+README 里也单列了一节。**反向导入仍不还原作业**，README 指向作业工具的学期复用。
+
+真实数据核对过：本地库里那份「第一次作业：数字孪生案例分析」（2 道题）用真表行
+渲染了一遍，标题、描述、截止时间、计分方式、发布状态、每题的题型标签与满分都对；
+`_assignments_by_activity` 也正确地把 `activity_id=9` 映射到了这份作业。
+那两道题的 `contents` 在库里就是 `{}`，所以走的是"还没有录入内容"分支 —— 不是解析失败。
+
+
 ---
 
 ## 1b. 前端自动化测试与类型检查
 
 ```sh
-cd apps/web
-bun install --frozen-lockfile
+cd apps/web && bun install --frozen-lockfile
 bun test tests            # 275 pass / 0 fail（其中本分支新增 12 条）
-bunx tsc --noEmit
+bunx tsc --noEmit -p .    # exit 0
+cd ../e2e && bun run typecheck   # exit 0
 ```
+
+**跑 tsc 之前 `apps/web/next-env.d.ts` 必须存在**（`next dev` / `next build` 会生成，
+它被 gitignore）。缺了会冒出二十几个"找不到 public/*.png 模块"的假报错，
+和本分支无关但很唬人。
 
 新增 `tests/ext/content-tools-paste.test.mjs`，12 条覆盖粘贴规则的触发条件。
 这个判断错了有两种后果、都很难被发现：放宽了会把老师正常的文字粘贴吃掉，
@@ -98,9 +140,9 @@ bunx tsc --noEmit
 整套 bun test 里的 `rtl-guard.test.mjs` 会扫全仓库的物理方向 class，它过了，
 说明本分支的新组件没有写 `ml-/pl-/text-left` 这类禁用写法。
 
-`bunx tsc --noEmit` 在本分支新增的四个前端文件上零报错。全仓库确实有若干
-`Cannot find module 'public/*.png'`，那是直接跑 tsc（不经 next build）时的
-图片模块解析问题，干净树上同样存在。
+`bunx tsc --noEmit -p .` 与 `apps/e2e` 的 `bun run typecheck` 都 exit 0。
+这一条必须过：push 到 sysu-sam 会触发镜像构建里的 `next build`，
+一个类型错误就能把全组的构建带红，而 eslint 不做类型检查。
 
 ---
 
@@ -253,15 +295,17 @@ Instructor）——**它把 org_id 声明成 query 参数，所以这些接口�
 
 ### 虚拟助教页面地址的取值顺序
 
-组织配置的 `ext` 段 → 环境变量 `LEARNHOUSE_EXT_AVATAR_PAGE_URL` → 内置默认值
-`https://blog.sysu-sam.com/@zhuyizhang/lh-avatar`。返回值里的 `source` 字段说明
-这次是从哪一层取到的。
+三层回退走骨架的共用模块 `src/services/ext/config.py` 的 `get_ext_config`，
+不再自己写一套：组织配置的 `ext` 段 → 环境变量 `LEARNHOUSE_EXT_AVATAR_PAGE_URL`
+→ 内置默认值 `https://blog.sysu-sam.com/@zhuyizhang/lh-avatar`。
+接口返回的 `source` 字段说明这次是从哪一层取到的，配错了知道去哪儿改。
 
-组织配置读的是 `organizationconfig` 表的 `config` 列（一个自由 dict），
-不是 `Organization` 表 —— 那张表根本没有 config 字段。走自由 dict 的好处是
-部署方加的 `ext` 段不会被上游的 pydantic 模型剪掉。**但目前还没有任何 UI 能写这个
-字段**，所以实际生效的是环境变量和默认值这两层；等骨架或作业工具定下组织设置
-ext 段的写入口，这一层自动就活了，代码不用改。
+前端用共用的 `getExtConfig(org, 'avatar_page_url', '')`，读到就直接用、读不到才去问
+后端。**前端读不到环境变量**，所以这个地址应当写进组织配置的 ext 段；只设环境变量
+的话后端能用、前端界面上显示不出来。
+
+`avatar.py` 现在是纯函数模块（切句、编码、`normalize_page_url` 校验），
+不碰数据库；地址解析在 `activities.resolve_avatar_page_url`。
 
 ---
 

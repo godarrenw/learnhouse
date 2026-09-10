@@ -8,6 +8,11 @@ authors = [
 ]
 dependencies = [
     "boto3==1.43.83",
+    # SYSU-SAM: SQLAlchemy 的 async 引擎在运行时必须要 greenlet，但它在解析出来的
+    # marker 下会被跳过（Apple Silicon 的 macOS 上尤其明显），装不上的结果是所有
+    # 碰数据库的代码路径直接 ValueError: the greenlet library is required。
+    # 显式钉进依赖，全组 `uv sync` 之后行为一致，不用各人再手动补装。
+    "greenlet>=3.3.1",
     "botocore==1.43.87",
     "faker==40.38.0",
     "fastapi==0.141.1",

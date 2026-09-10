@@ -499,8 +499,8 @@ def test_链接里没有讲稿片段时报错():
 
 
 def test_build_url_把讲稿塞进_hash():
-    built = avatar.build_url("同学们今天上课。这一章讲传热学。", title="第一章",
-                             page_url="https://example.com/avatar")
+    built = avatar.build_url("同学们今天上课。这一章讲传热学。",
+                             "https://example.com/avatar", title="第一章")
     assert built["url"].startswith("https://example.com/avatar#")
     assert built["line_count"] == 2
     assert avatar.decode_payload(built["url"].split("#", 1)[1])["title"] == "第一章"
@@ -508,32 +508,20 @@ def test_build_url_把讲稿塞进_hash():
 
 def test_空讲稿报错():
     with pytest.raises(avatar.AvatarError):
-        avatar.build_url("```\nprint(1)\n```")
+        avatar.build_url("```\nprint(1)\n```", "https://example.com/avatar")
 
 
-def test_页面地址按组织配置_环境变量_默认值的顺序取(monkeypatch):
-    monkeypatch.delenv(avatar.ENV_PAGE_URL, raising=False)
-    assert avatar.resolve_page_url(None) == {
-        "page_url": avatar.DEFAULT_PAGE_URL, "source": "default"}
-
-    monkeypatch.setenv(avatar.ENV_PAGE_URL, "https://env.example.com/a/")
-    assert avatar.resolve_page_url(None) == {
-        "page_url": "https://env.example.com/a", "source": "env"}
-
-    org_config = {"config": {"ext": {"content": {"avatar_page_url": "https://org.example.com/a"}}}}
-    assert avatar.resolve_page_url(org_config) == {
-        "page_url": "https://org.example.com/a", "source": "org_config"}
+def test_页面地址会被规整():
+    assert avatar.normalize_page_url("https://example.com/a/") == "https://example.com/a"
+    assert avatar.normalize_page_url("  https://example.com/a#  ") == "https://example.com/a"
 
 
-def test_组织配置里的地址也认不包一层_content_的写法():
-    org_config = {"ext": {"avatar_page_url": "https://org.example.com/b"}}
-    assert avatar.resolve_page_url(org_config)["source"] == "org_config"
-
-
-def test_非_http_地址报错(monkeypatch):
-    monkeypatch.setenv(avatar.ENV_PAGE_URL, "javascript:alert(1)")
+@pytest.mark.parametrize("bad", ["", "   ", "javascript:alert(1)", "example.com/a",
+                                 "file:///etc/passwd"])
+def test_非_http_的页面地址一律拒(bad):
+    """组织配置和环境变量都是人手填的，填错要在生成链接之前报出来。"""
     with pytest.raises(avatar.AvatarError):
-        avatar.resolve_page_url(None)
+        avatar.normalize_page_url(bad)
 
 
 def test_数字人节点原样保留链接不做归一化():
@@ -953,7 +941,7 @@ class TestAvatarAppend:
         try:
             res = await append_avatar_embed(
                 mock_request, activity.activity_uuid, "大家好，今天讲第一章。", admin_user, db,
-                title="本节要点", page_url="https://example.com/avatar")
+                page_url="https://example.com/avatar", title="本节要点")
         finally:
             for c in ctxs:
                 c.stop()
@@ -1000,3 +988,227 @@ class TestAvatarAppend:
                                script="```\nprint(1)\n```")
         await db.refresh(activity)
         assert activity.content == {"type": "doc", "content": []}
+
+
+# ============================================================ 短链跳转白名单
+
+
+class TestRedirectAllowlist:
+    """`resolve_b23_link` 是**服务端**发起的请求，跟的是第三方给的 Location。
+
+    一条被做过手脚的短链可以把服务端引到内网地址上去（SSRF），所以每一跳都要
+    查白名单。这几条把行为钉死。
+    """
+
+    def test_白名单认自身与子域(self):
+        import src.services.ext.content_tools.embeds as mod
+        for good in ["https://b23.tv/x", "https://www.bilibili.com/video/BV1",
+                     "https://m.bilibili.com/video/BV1",
+                     "https://player.bilibili.com/player.html?bvid=BV1",
+                     "https://space.bilibili.com/123"]:
+            assert mod._host_allowed(good), good
+
+    def test_白名单拒掉内网与他站(self):
+        import src.services.ext.content_tools.embeds as mod
+        for bad in ["http://127.0.0.1:8000/x", "http://169.254.169.254/latest/meta-data",
+                    "http://localhost/admin", "https://evil.com/x",
+                    # 后缀相似但不是子域：bilibili.com.evil.com
+                    "https://bilibili.com.evil.com/x",
+                    "https://notbilibili.com/x", "not-a-url", ""]:
+            assert not mod._host_allowed(bad), bad
+
+    def test_入口地址不是_bilibili_直接拒(self):
+        import src.services.ext.content_tools.embeds as mod
+        with pytest.raises(EmbedError, match="只解析"):
+            mod.resolve_b23_link("https://evil.com/x")
+
+    def test_跳到站外就中止(self, monkeypatch):
+        """第一跳把我们引到元数据服务地址，必须报错而不是继续跟。"""
+        import urllib.error
+
+        import src.services.ext.content_tools.embeds as mod
+
+        class _Redirect(urllib.error.HTTPError):
+            """伪造一次 302，Location 指向内网。"""
+
+            def __init__(self):
+                self.headers = {"Location": "http://169.254.169.254/latest/meta-data"}
+
+        class _Opener:
+            def open(self, _req, timeout=None):
+                raise _Redirect()
+
+        monkeypatch.setattr(mod.urllib.request, "build_opener", lambda *a, **k: _Opener())
+        with pytest.raises(EmbedError, match="bilibili 以外"):
+            mod.resolve_b23_link("https://b23.tv/abcd")
+
+
+# ============================================================ zip 炸弹
+
+
+class TestZipBomb:
+    def test_不信_zip_头声明的大小(self, monkeypatch):
+        """把「解压后总大小」的上限临时调小，验证是按**实际读到的字节**计的。
+
+        真正的 zip 炸弹会把头里的 file_size 写成很小的数骗过预检，
+        然后 zf.read() 一把解出几个 G。所以这里读的时候边读边数。
+        """
+        import src.services.ext.content_tools.transfer as mod
+
+        payload = b"A" * 200_000          # 高度可压缩，压缩包本身很小
+        raw = _zip_of({"课程/README.md": "# x", "课程/big.bin": payload})
+
+        monkeypatch.setattr(mod, "MAX_UNCOMPRESSED_BYTES", 50_000)
+        with pytest.raises(TransferError, match="上限"):
+            mod.read_zip_tree(raw)
+
+    def test_伪造的_file_size_骗不过去(self, monkeypatch):
+        """直接把 zip 头里的 file_size 改成 1，旧写法会放行。"""
+        import src.services.ext.content_tools.transfer as mod
+
+        raw = _zip_of({"课程/README.md": "# x", "课程/big.bin": b"B" * 200_000})
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+        # 预检若信头，这个和会小得离谱
+        forged_total = 1 * len(zf.infolist())
+        assert forged_total < 50_000
+
+        monkeypatch.setattr(mod, "MAX_UNCOMPRESSED_BYTES", 50_000)
+        with pytest.raises(TransferError):
+            mod.read_zip_tree(raw)
+
+    def test_正常包不受影响(self):
+        tree = read_zip_tree(_zip_of(MINIMAL_EXPORT))
+        assert "我的课/README.md" in tree
+
+
+# ============================================================ 作业导出
+
+
+class _FakeTask:
+    def __init__(self, **kw):
+        self.title = kw.get("title", "")
+        self.description = kw.get("description", "")
+        self.hint = kw.get("hint", "")
+        self.assignment_type = kw["assignment_type"]
+        self.contents = kw.get("contents", {})
+        self.max_grade_value = kw.get("max_grade_value", 100)
+
+
+class _FakeAssignment:
+    def __init__(self, **kw):
+        self.title = kw.get("title", "第一次作业")
+        self.description = kw.get("description", "")
+        self.due_date = kw.get("due_date")
+        self.published = kw.get("published", True)
+        self.grading_type = kw.get("grading_type", "NUMERIC")
+        self.show_correct_answers = kw.get("show_correct_answers", False)
+
+
+class TestAssignmentMarkdown:
+    """作业导出：题目 + 参考答案。只读上游的两张表，不依赖作业工具那条线的模块。"""
+
+    def test_抬头写清楚了含参考答案(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+
+        md = render_assignment_markdown(_FakeAssignment(due_date="2026-10-01"), [])
+        assert md.startswith("# 第一次作业")
+        assert "> [!info]" in md and "截止 2026-10-01" in md
+        assert "参考答案是给老师看的" in md
+        assert "这份作业还没有题目" in md
+
+    def test_选择题列出选项并标出正确项(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        task = _FakeTask(
+            title="判断导热方式", assignment_type=AssignmentTaskTypeEnum.QUIZ,
+            contents={"questions": [{
+                "questionText": "下面哪些属于传热方式？",
+                "options": [
+                    {"text": "导热", "assigned_right_answer": True},
+                    {"text": "对流", "assigned_right_answer": True},
+                    {"text": "折射", "assigned_right_answer": False},
+                ]}]})
+        md = render_assignment_markdown(_FakeAssignment(), [task])
+        assert "第 1 题 · 判断导热方式（选择题，满分 100）" in md
+        assert "- A. 导热" in md and "- C. 折射" in md
+        assert "**参考答案**：A、B" in md
+
+    def test_简答数值编程各有参考答案(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        tasks = [
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.SHORT_ANSWER,
+                      contents={"prompt": "什么是熵？", "correct_answers": ["混乱程度"],
+                                "match_mode": "contains"}),
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.NUMBER_ANSWER,
+                      contents={"prompt": "水的沸点？", "correct_value": 100,
+                                "unit": "℃", "tolerance": 0.5}),
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.CODE,
+                      contents={"language": "python", "starter_code": "def f():\n    pass",
+                                "solution_code": "def f():\n    return 1"}),
+        ]
+        md = render_assignment_markdown(_FakeAssignment(), tasks)
+        assert "**参考答案**：混乱程度（匹配方式 contains）" in md
+        assert "**参考答案**：100 ℃（容差 ±0.5）" in md
+        assert "**参考解法**：" in md and "return 1" in md
+
+    def test_文件提交题说明没有标准答案(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        md = render_assignment_markdown(_FakeAssignment(), [
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.FILE_SUBMISSION)])
+        assert "学生上传文件作答，没有标准答案" in md
+
+    def test_没填答案时说没填而不是留空(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        md = render_assignment_markdown(_FakeAssignment(), [
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.QUIZ,
+                      contents={"questions": [{"questionText": "问", "options": [
+                          {"text": "甲", "assigned_right_answer": False}]}]})])
+        assert "没有标正确选项" in md
+
+    def test_认不出的题型不炸只提示(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+
+        md = render_assignment_markdown(_FakeAssignment(), [
+            _FakeTask(assignment_type="SOME_FUTURE_TYPE", contents={"x": 1})])
+        assert "SOME_FUTURE_TYPE" in md
+        assert "请到网页上查看" in md
+
+    def test_提示会带出来(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        md = render_assignment_markdown(_FakeAssignment(), [
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.FILE_SUBMISSION,
+                      hint="记得写单位")])
+        assert "> [!info] 提示：记得写单位" in md
+
+    def test_超过_26_个选项退回数字标号(self):
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        options = [{"text": "选项%d" % i, "assigned_right_answer": i == 26}
+                   for i in range(30)]
+        md = render_assignment_markdown(_FakeAssignment(), [
+            _FakeTask(assignment_type=AssignmentTaskTypeEnum.QUIZ,
+                      contents={"questions": [{"questionText": "问", "options": options}]})])
+        assert "**参考答案**：27" in md
+
+    def test_题干为空时明说而不是只留个标题(self):
+        """本地库里就有这种数据：题目建了但 contents 还是 {}。
+
+        只输出一个光秃秃的标题会让老师以为导出坏了。
+        """
+        from src.services.ext.content_tools.assignments_md import render_assignment_markdown
+        from src.db.courses.assignments import AssignmentTaskTypeEnum
+
+        md = render_assignment_markdown(_FakeAssignment(), [
+            _FakeTask(title="第 1 题", assignment_type=AssignmentTaskTypeEnum.QUIZ,
+                      contents={})])
+        assert "这道题还没有录入内容" in md

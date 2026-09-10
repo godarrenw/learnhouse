@@ -21,12 +21,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
 from src.db.courses.activities import Activity
-from src.db.organization_config import OrganizationConfig
 from src.db.users import PublicUser
 from src.routers.ext.deps import require_teacher
-from src.services.ext.content_tools import avatar as avatar_svc
 from src.services.ext.content_tools import qrgen
-from src.services.ext.content_tools.activities import append_avatar_embed
+from src.services.ext.content_tools.activities import (
+    append_avatar_embed,
+    resolve_avatar_page_url,
+)
 from src.services.ext.content_tools.avatar import AvatarError
 from src.services.ext.content_tools.embeds import EmbedError, resolve_embed
 from src.services.ext.content_tools.transfer import (
@@ -65,30 +66,12 @@ class AvatarAppendRequest(BaseModel):
 # ------------------------------------------------------------ 工具
 
 
-async def _org_config_by_id(db_session: AsyncSession, org_id: int):
-    """读组织配置的 JSON blob。
-
-    注意 `Organization` 这张表**没有** config 字段 —— 配置在单独的
-    `organizationconfig` 表里，`config` 列是个自由 dict，所以部署方自己加的
-    `ext` 段能原样存下来，不会被上游的 pydantic 模型剪掉。
-    读不到就返回 None，让 avatar 那边退回环境变量和内置默认值。
-    """
-    row = (await db_session.execute(
-        select(OrganizationConfig).where(OrganizationConfig.org_id == org_id)
-    )).scalars().first()
-    if row is None or not isinstance(row.config, dict):
-        return None
-    return row.config
-
-
-async def _org_config_of_activity(db_session: AsyncSession, activity_uuid: str):
-    """取活动所属组织的配置。"""
+async def _org_id_of_activity(db_session: AsyncSession, activity_uuid: str):
+    """活动属于哪个组织。找不到活动返回 None，由业务层去报 404。"""
     activity = (await db_session.execute(
         select(Activity).where(Activity.activity_uuid == activity_uuid)
     )).scalars().first()
-    if not activity:
-        return None
-    return await _org_config_by_id(db_session, activity.org_id)
+    return activity.org_id if activity else None
 
 
 # ------------------------------------------------------------ Markdown 导入导出
@@ -235,9 +218,8 @@ async def api_avatar_config(
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    org_config = await _org_config_by_id(db_session, org_id)
     try:
-        return avatar_svc.resolve_page_url(org_config)
+        return await resolve_avatar_page_url(db_session, org_id)
     except AvatarError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -267,11 +249,18 @@ async def api_append_avatar(
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    org_config = await _org_config_of_activity(db_session, activity_uuid)
     try:
+        # 页面地址：请求里显式给了就听它的（临时试别的部署用），
+        # 否则按活动所属组织去解析「组织配置 → 环境变量 → 默认值」
+        page_url = body.page_url
+        if not page_url:
+            activity_org_id = await _org_id_of_activity(db_session, activity_uuid)
+            if activity_org_id is None:
+                raise HTTPException(status_code=404, detail="Activity not found")
+            page_url = (await resolve_avatar_page_url(db_session, activity_org_id))["page_url"]
         return await append_avatar_embed(
             request, activity_uuid, body.script, current_user, db_session,
-            title=body.title, page_url=body.page_url, org_config=org_config)
+            page_url=page_url, title=body.title)
     except AvatarError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -6,15 +6,42 @@ skill 版改页面前会把旧内容存一份到 `~/.learnhouse/backups/`；后�
 因为上游的 `update_activity` 只要带 content 就会自动存一条活动版本
 （`services/courses/activities/versioning.py`），老师在「内容页版本回滚」里能捞回来。
 """
+import os
+
 from fastapi import HTTPException, Request
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.db.courses.activities import Activity, ActivitySubTypeEnum, ActivityUpdate
 from src.services.courses.activities.activities import update_activity
+from src.services.ext.config import get_ext_config, get_ext_config_section
 
 from . import avatar as avatar_mod
 from .markdown import inline_nodes
+
+
+async def resolve_avatar_page_url(db_session: AsyncSession, org_id: int) -> dict:
+    """数字人页面地址：组织配置 ext 段 → 环境变量 → 内置默认值。
+
+    三层回退本身由共用的 `get_ext_config` 做，这里额外算一个 `source`，
+    好让界面上能告诉老师这个地址是从哪一层来的（配错了才知道去哪儿改）。
+    """
+    section = await get_ext_config_section(db_session, org_id)
+    raw = section.get(avatar_mod.CONFIG_KEY)
+    if raw not in (None, "", {}):
+        source = "org_config"
+    elif os.environ.get(avatar_mod.ENV_PAGE_URL):
+        source = "env"
+    else:
+        source = "default"
+
+    url = await get_ext_config(
+        db_session, org_id,
+        key=avatar_mod.CONFIG_KEY,
+        env_var=avatar_mod.ENV_PAGE_URL,
+        default=avatar_mod.DEFAULT_PAGE_URL,
+    )
+    return {"page_url": avatar_mod.normalize_page_url(url), "source": source}
 
 
 async def append_avatar_embed(
@@ -23,9 +50,8 @@ async def append_avatar_embed(
     script: str,
     current_user,
     db_session: AsyncSession,
+    page_url: str,
     title: str | None = None,
-    page_url: str | None = None,
-    org_config: dict | None = None,
     height: int = avatar_mod.DEFAULT_HEIGHT,
 ):
     """把讲稿变成数字人链接，追加到内容页末尾。
@@ -33,7 +59,7 @@ async def append_avatar_embed(
     先算链接再动页面：讲稿有问题（空的、只剩念不出来的内容）在 `build_url` 就抛错，
     页面一个字都不会被改。RBAC 由 `update_activity` 里的 `check_resource_access` 负责。
     """
-    built = avatar_mod.build_url(script, title=title, page_url=page_url, org_config=org_config)
+    built = avatar_mod.build_url(script, page_url, title=title)
 
     activity = (await db_session.execute(
         select(Activity).where(Activity.activity_uuid == activity_uuid)
@@ -73,7 +99,6 @@ async def append_avatar_embed(
         "url_length": built["url_length"],
         "encoding": built["encoding"],
         "page_url": built["page_url"],
-        "page_url_source": built["page_url_source"],
         "nodes_before": before,
         "nodes_after": len(nodes),
         "version_saved": bool(activity.content),

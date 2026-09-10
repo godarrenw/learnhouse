@@ -36,6 +36,7 @@ import {
   getAvatarConfig,
   importCourseMarkdown,
 } from '@services/ext/content'
+import { getExtConfig } from '@components/SysuTools/shared'
 import { queryKeys } from '@/lib/query/keys'
 import { cn } from '@/lib/utils'
 
@@ -404,12 +405,16 @@ function AvatarPanel({ courseUuid }: { courseUuid?: string }) {
   const [busy, setBusy] = React.useState(false)
   const [result, setResult] = React.useState<AvatarAppendResult | null>(null)
 
+  // 页面地址：先看组织配置的 ext 段（前端只能读到这一层），读不到再问后端 ——
+  // 后端还会往下回退到环境变量和内置默认值，那两层前端看不见。
+  const configuredUrl = getExtConfig(org, 'avatar_page_url', '')
   const { data: config } = useQuery({
     queryKey: queryKeys.ext.content.avatarConfig(orgId ?? 0),
     queryFn: () => getAvatarConfig(orgId as number, access_token),
-    enabled: !!orgId && !!access_token,
+    enabled: !configuredUrl && !!orgId && !!access_token,
     staleTime: 5 * 60_000,
   })
+  const avatarPageUrl = configuredUrl || config?.page_url || ''
 
   const { data: meta, isFetching: metaLoading } = useQuery({
     queryKey: queryKeys.ext.content.courseTree(courseUuid ?? ''),
@@ -579,10 +584,10 @@ function AvatarPanel({ courseUuid }: { courseUuid?: string }) {
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
           <div className="text-xs text-gray-400 min-w-0 truncate">
-            {config
+            {avatarPageUrl
               ? t('ext.tools.content.avatar.page_url', {
                   defaultValue: '页面地址：{{url}}',
-                  url: config.page_url,
+                  url: avatarPageUrl,
                 })
               : ''}
           </div>

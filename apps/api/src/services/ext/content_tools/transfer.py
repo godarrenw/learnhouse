@@ -32,6 +32,7 @@ from starlette.datastructures import Headers
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from src.db.courses.assignments import Assignment, AssignmentTask
 from src.db.courses.activities import (
     Activity,
     ActivityCreate,
@@ -50,6 +51,7 @@ from src.services.courses.activities.activities import create_activity, update_a
 from src.services.courses.chapters import create_chapter
 from src.services.utils.upload_content import read_content
 
+from .assignments_md import render_assignment_markdown
 from .markdown import (
     front_matter,
     md_to_tiptap,
@@ -71,6 +73,9 @@ MAX_ZIP_ENTRIES = 2000
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+
+#: 流式读 zip 条目时每次读多少
+_ZIP_CHUNK = 64 * 1024
 
 
 class TransferError(ValueError):
@@ -125,6 +130,37 @@ async def _course_tree(db_session: AsyncSession, course_id: int):
     return tree
 
 
+
+async def _assignments_by_activity(db_session: AsyncSession, course_id: int):
+    """课程里的作业，按它挂靠的活动 id 索引：`{activity_id: (作业, [题目, …])}`。
+
+    一次把作业和题目都捞出来，避免在导出循环里对每个活动各查一次。
+    题目按 id 排序 —— 上游没有给 AssignmentTask 存显式的 order 字段，
+    id 递增就是创建顺序，也是网页上的显示顺序。
+    """
+    assignments = (await db_session.execute(
+        select(Assignment).where(Assignment.course_id == course_id)
+    )).scalars().all()
+    if not assignments:
+        return {}
+
+    tasks = (await db_session.execute(
+        select(AssignmentTask)
+        .where(AssignmentTask.assignment_id.in_([a.id for a in assignments]))  # type: ignore
+        .order_by(AssignmentTask.id)  # type: ignore
+    )).scalars().all()
+
+    by_assignment: dict = {}
+    for task in tasks:
+        by_assignment.setdefault(task.assignment_id, []).append(task)
+
+    return {
+        a.activity_id: (a, by_assignment.get(a.id, []))
+        for a in assignments
+        if a.activity_id is not None
+    }
+
+
 # ------------------------------------------------------------ 导出
 
 
@@ -162,10 +198,13 @@ async def export_course_markdown(
     导出过程中的降级（图片读不到、活动类型不支持等），不静默丢。
     """
     course = await _get_course(db_session, course_uuid)
-    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.READ)
+    # 按 UPDATE 判而不是 READ：导出包里含作业的题目和**参考答案**，
+    # 能拿到答案的人必须是能改这门课的人，仅仅"能看这门课"不够。
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.UPDATE)
     org_uuid = await _get_org_uuid(db_session, course.org_id)
 
     tree = await _course_tree(db_session, course.id)  # type: ignore
+    assignments_by_activity = await _assignments_by_activity(db_session, course.id)  # type: ignore
     root = _slug(course.name, "课程")
 
     buf = io.BytesIO()
@@ -215,10 +254,16 @@ async def export_course_markdown(
 
                 elif atype == "TYPE_ASSIGNMENT":
                     kind = "assignment"
-                    body = ("# %s\n\n这是一个作业活动。题目和参考答案没有随导出下载，\n"
-                            "反向导入也不会重建它 —— 作业请用「作业工具」里的学期复用功能搬。\n"
-                            % act.name)
-                    notes.append("活动「%s」是作业，导出里只有一个占位文件" % act.name)
+                    pair = assignments_by_activity.get(act.id)
+                    if pair is None:
+                        body = ("# %s\n\n这个作业壳没有对应的作业记录，"
+                                "可能是建到一半没保存。\n" % act.name)
+                        notes.append("活动「%s」是作业壳，但找不到对应的作业记录" % act.name)
+                    else:
+                        assignment, tasks = pair
+                        body = render_assignment_markdown(assignment, tasks)
+                        notes.append("作业「%s」导出了题目与**参考答案**，"
+                                     "发给学生前请先删掉答案行" % (assignment.title or act.name))
 
                 else:
                     body = ("# %s\n\n（未识别的活动类型 %s / %s，只导出了标题）\n"
@@ -256,6 +301,9 @@ async def export_course_markdown(
             "「导入 Markdown」只能还原**内容页**和**整页嵌入**。",
             "托管视频、PDF、作业需要重新上传或重建 —— 前两者的原始文件不在这个包里，",
             "作业请用「作业工具」里的学期复用功能搬。", "",
+            "## 这份导出含参考答案", "",
+            "作业的 `.md` 里带着**参考答案**，是给老师备课和迁移用的。",
+            "直接把整个压缩包发给学生等于发答案 —— 要分享请先把答案行删掉。", "",
         ]
         zf.writestr("%s/README.md" % root, "\n".join(readme))
 
@@ -339,22 +387,46 @@ def read_zip_tree(zip_bytes: bytes):
     if len(infos) > MAX_ZIP_ENTRIES:
         raise TransferError("压缩包里有 %d 个文件，超过 %d 个的上限"
                             % (len(infos), MAX_ZIP_ENTRIES))
-    total = sum(i.file_size for i in infos)
-    if total > MAX_UNCOMPRESSED_BYTES:
-        raise TransferError("解压后有 %d MB，超过 %d MB 的上限"
-                            % (total // 1024 // 1024, MAX_UNCOMPRESSED_BYTES // 1024 // 1024))
 
     tree = {}
+    total = 0
     for info in infos:
         name = info.filename.replace("\\", "/")
         if name.startswith("/") or os.path.isabs(name) or ".." in name.split("/"):
             raise TransferError("压缩包里有非法路径：%s" % info.filename[:120])
         if "/__MACOSX/" in "/" + name or os.path.basename(name).startswith("._"):
             continue          # macOS 打包时塞的资源分叉，忽略
-        tree[name] = zf.read(info)
+        data = _read_entry_capped(zf, info, MAX_UNCOMPRESSED_BYTES - total)
+        total += len(data)
+        tree[name] = data
     if not tree:
         raise TransferError("压缩包是空的")
     return tree
+
+
+def _read_entry_capped(zf: zipfile.ZipFile, info: zipfile.ZipInfo, remaining: int) -> bytes:
+    """流式读一个条目，边读边数，超出剩余额度立刻中止。
+
+    **不信 zip 头里声明的 `file_size`**：那是压缩包自己写的数字，伪造成 1 就能
+    绕过「解压后总大小」这道闸，然后 `zf.read()` 一把把几个 G 解进内存
+    （zip 炸弹）。所以按实际读出来的字节数计。
+    """
+    if remaining <= 0:
+        raise TransferError("解压后超过 %d MB 的上限"
+                            % (MAX_UNCOMPRESSED_BYTES // 1024 // 1024))
+    chunks, read = [], 0
+    with zf.open(info) as fh:
+        while True:
+            chunk = fh.read(_ZIP_CHUNK)
+            if not chunk:
+                break
+            read += len(chunk)
+            if read > remaining:
+                raise TransferError(
+                    "解压后超过 %d MB 的上限（压缩包声明的大小和实际读到的对不上，"
+                    "可能是个 zip 炸弹）" % (MAX_UNCOMPRESSED_BYTES // 1024 // 1024))
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def locate_course_root(tree: dict):

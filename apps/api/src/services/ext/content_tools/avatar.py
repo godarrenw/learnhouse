@@ -12,7 +12,6 @@
 import base64
 import gzip
 import json
-import os
 import re
 
 DEFAULT_HEIGHT = 560
@@ -25,7 +24,10 @@ PARA_PAUSE_MS = 450
 #: 超过这个长度就上 gzip；短讲稿用明文 base64url，兼容最老的浏览器
 GZIP_THRESHOLD = 4000
 
-#: 页面托管地址的兜底值。真实地址优先从组织配置的 ext 段读，其次读这个环境变量。
+#: 组织配置 ext 段里的 key，以及对应的环境变量。三层回退由
+#: `src/services/ext/config.py` 的 `get_ext_config` 统一负责。
+#: 注意**前端读不到环境变量**，所以这个地址应当写进组织配置的 ext 段。
+CONFIG_KEY = "avatar_page_url"
 ENV_PAGE_URL = "LEARNHOUSE_EXT_AVATAR_PAGE_URL"
 #: 当前部署已经上线的地址（见 skill/reference/avatar.md「当前部署」一节）。
 DEFAULT_PAGE_URL = "https://blog.sysu-sam.com/@zhuyizhang/lh-avatar"
@@ -163,64 +165,37 @@ def decode_payload(fragment):
     return json.loads(raw.decode("utf-8"))
 
 
-def _from_org_config(org_config):
-    """从组织配置里找数字人页面地址。
+def normalize_page_url(url):
+    """校验并规整数字人页面地址。空字符串或非 http(s) 一律拒。
 
-    组织配置是 JSON，部署方的扩展配置约定放在 `ext` 段下。这里对几种写法都认，
-    读不到就返回 None（交给环境变量和内置默认值兜底），不抛错。
+    组织配置和环境变量都是人手填的，填错了要在生成链接**之前**报出来，
+    而不是让老师拿到一条打不开的链接。
     """
-    if not isinstance(org_config, dict):
-        return None
-    # config 有时是 {"config": {...}} 包一层
-    cfg = org_config.get("config") if isinstance(org_config.get("config"), dict) else org_config
-    ext = cfg.get("ext")
-    if isinstance(ext, dict):
-        for holder in (ext.get("content"), ext):
-            if isinstance(holder, dict) and holder.get("avatar_page_url"):
-                return str(holder["avatar_page_url"])
-    return None
-
-
-def resolve_page_url(org_config=None):
-    """数字人页面地址：组织配置 ext 段 → 环境变量 → 内置默认值。
-
-    返回 `{page_url, source}`，`source` 取值 `org_config` / `env` / `default`，
-    让前端能告诉老师这个地址是从哪儿来的。
-    """
-    url = _from_org_config(org_config)
-    source = "org_config"
-    if not url:
-        url = os.environ.get(ENV_PAGE_URL) or ""
-        source = "env"
-    if not url:
-        url = DEFAULT_PAGE_URL
-        source = "default"
-    url = url.strip()
+    url = str(url or "").strip()
     if not url.startswith(("http://", "https://")):
         raise AvatarError("数字人页面地址要以 http:// 或 https:// 开头，当前是：%s" % url[:80])
-    return {"page_url": url.rstrip("#").rstrip("/"), "source": source}
+    return url.rstrip("#").rstrip("/")
 
 
-def build_url(script, title=None, page_url=None, compress=None, org_config=None):
-    """讲稿 → 完整的数字人链接。
+def build_url(script, page_url, title=None, compress=None):
+    """讲稿 → 完整的数字人链接。纯函数，页面地址由调用方解析好传进来。
 
-    返回 `{url, title, line_count, url_length, encoding, lines, page_url, page_url_source}`。
+    地址的三层回退（组织配置 → 环境变量 → 默认值）走
+    `src/services/ext/config.py` 的 `get_ext_config`，那是全组共用的读法，
+    不在这里各写一套。
+
+    返回 `{url, title, line_count, url_length, encoding, lines, page_url}`。
     """
+    base = normalize_page_url(page_url)
     lines = split_script(script)
     if not lines:
         raise AvatarError("讲稿是空的，或者只剩下代码块 / 图片 / 表格这类念不出来的内容")
     data = {"title": title or "虚拟助教", "lines": lines}
     frag = encode_payload(data, compress=compress)
-    if page_url:
-        base, source = page_url.strip().rstrip("#").rstrip("/"), "explicit"
-    else:
-        resolved = resolve_page_url(org_config)
-        base, source = resolved["page_url"], resolved["source"]
     url = base + "#" + frag
     return {"url": url, "title": data["title"], "line_count": len(lines),
             "url_length": len(url), "encoding": frag[0],
-            "lines": [ln["text"] for ln in lines],
-            "page_url": base, "page_url_source": source}
+            "lines": [ln["text"] for ln in lines], "page_url": base}
 
 
 def embed_node(url, height=DEFAULT_HEIGHT):
