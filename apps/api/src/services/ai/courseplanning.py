@@ -1,3 +1,15 @@
+# ============================================================================
+# 修改声明（GNU AGPL-3.0 第 5(a) 条）
+#
+# 本文件是 LearnHouse v1.3.6 的修改版本。
+#   上游项目： https://github.com/learnhouse/learnhouse  （tag v1.3.6）
+#   修改方：   中山大学先进制造学院 · 先进智造实验室
+#   修改日期： 2026-09-08
+#   修改摘要： 修复语言码回落缺陷：前端传入的 "zh-CN" 无法匹配语言表而回落为 English，导致中文环境下 AI 生成英文内容。
+#
+# 上游原始文件见本仓库 git 历史：git show 1.3.6:apps/api/src/services/ai/courseplanning.py
+# 本平台整体仍以 AGPL-3.0 授权；完整的修改源码获取方式见平台页脚。
+# ============================================================================
 from typing import Optional, AsyncGenerator, List
 from uuid import uuid4
 import logging
@@ -186,7 +198,11 @@ def get_language_name(language_code: str) -> str:
         "bn": "Bengali",
         "fa": "Persian",
     }
-    return language_names.get(language_code, "English")
+    # PATCH(nas): 前端传的是 i18n.language，浏览器中文环境下是 "zh-CN"/"zh_CN"，
+    # 原实现直接查表匹配不到就回落 English，导致 AI 生成英文课程内容。
+    # 这里先规范化成主语言码再查表。
+    code = (language_code or "").replace("_", "-").split("-")[0].strip().lower()
+    return language_names.get(code, "English")
 
 
 def build_course_planning_system_prompt(language: str = "en") -> str:
