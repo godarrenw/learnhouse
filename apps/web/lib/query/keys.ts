@@ -112,4 +112,14 @@ export const queryKeys = {
     customers: (orgId: number) => ['payments', orgId, 'customers'] as const,
     groups: (orgId: number) => ['payments', orgId, 'groups'] as const,
   },
+  /* --- SYSU-SAM: 教学工具（ext）的 query key --- */
+  // 每个工具在这里加一个工厂函数，前缀统一是 'ext'，这样一句
+  // invalidateQueries({ queryKey: ['ext'] }) 就能刷掉全部教学工具的缓存。
+  // 注意 courses 是本层自己的一份（带 include_unpublished），
+  // 不要复用 queryKeys.courses.list —— 那个 key 被上游用不同参数占着。
+  ext: {
+    health: (orgId: number) => ['ext', 'health', orgId] as const,
+    courses: (orgSlug: string) => ['ext', 'courses', orgSlug] as const,
+  },
+  /* --- /SYSU-SAM --- */
 }

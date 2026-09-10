@@ -1,0 +1,357 @@
+# 教学工具（ext）扩展点
+
+后台左侧菜单的「教学工具」是一块公共骨架，所有部署方自建的教学功能都挂在它下面。
+这份文档写给**要往里加工具的人**：加一个工具要动哪几个文件、共用件有哪些、
+权限怎么判、测试怎么写。
+
+骨架本身的实现不用改。如果你觉得非改不可，先说一声——那说明扩展点设计漏了东西。
+
+前置阅读：`docs/sysu-sam/DEVELOPING.md`（新代码放哪、改上游文件的注释规范）、
+`/Volumes/D/code/learnhouse-agent/UI_GUIDE.md`（视觉与工程规范，尤其第 0 节和 3.9 模板）。
+
+---
+
+## 一分钟版：加一个工具
+
+假设你的工具叫「成绩册」，key 定为 `gradebook`。
+
+**前端**
+
+1. 写组件 `apps/web/components/SysuTools/tools/Gradebook/Gradebook.tsx`，
+   默认导出，props 类型 `SysuToolProps`。
+2. 在 `apps/web/components/SysuTools/registry.ts` 的 `SYSU_TOOLS` 里加一个条目。
+3. 在 `apps/web/locales/ext/zh.json` 与 `en.json` 的 `tools.gradebook` 下加文案。
+4. 需要新接口就在 `apps/web/services/ext/gradebook.ts` 里封装，
+   query key 加进 `apps/web/lib/query/keys.ts` 的 `ext` 分组。
+
+**后端**
+
+5. 写 `apps/api/src/routers/ext/gradebook.py`，导出 `router`。
+6. 在 `apps/api/src/routers/ext/__init__.py` 的 `SUBMODULES` 里加 `"gradebook"`。
+7. 业务逻辑放 `apps/api/src/services/ext/gradebook.py`，测试放
+   `apps/api/src/tests/ext/test_gradebook.py`。
+
+**验收**
+
+8. e2e 用例放 `apps/e2e/features/ext/tests/`，QA 记录写
+   `docs/sysu-sam/QA/<你的功能>.md`。
+
+路由、左侧菜单、移动端菜单、Tab 条、权限过滤都是骨架按注册表自动生成的，
+**这几个上游文件你都不用碰**。
+
+---
+
+## 前端扩展点
+
+### 注册表条目
+
+`apps/web/components/SysuTools/registry.ts`：
+
+```ts
+{
+  key: 'gradebook',                       // 路由段 /dash/tools/gradebook，全局唯一
+  titleKey: 'ext.tools.gradebook.title',  // i18n key，不是文案
+  descKey: 'ext.tools.gradebook.description',
+  icon: BookOpenCheck,                    // lucide-react（页面内容一律 Lucide）
+  component: lazy(() => import('./tools/Gradebook/Gradebook')),
+  minRole: 'instructor',
+  courseScoped: true,                     // 需要先选课程时才写
+}
+```
+
+`minRole` 三档：
+
+| 值 | 谁能看到 | 判断依据 |
+| --- | --- | --- |
+| `instructor` | Admin / Maintainer / Instructor | `rights.dashboard.action_access`，与后端 `require_teacher` 同口径 |
+| `maintainer` | Admin / Maintainer | `rights.usergroups.action_update` |
+| `admin` | 组织管理员 | `canManageOrg` |
+
+权限不足时，工具既不出现在概览卡片和 Tab 条里，直接访问 `/dash/tools/<key>` 也会 404
+（不是 403 —— 不泄露「有这么个工具但你看不到」）。
+
+`component` **必须** `lazy()`。概览页会把注册表整个引进来，同步 import 会把所有工具的
+代码塞进首屏。
+
+### courseScoped 的契约
+
+写了 `courseScoped: true` 之后：
+
+- 路由页会在页头下自动渲染 `CourseSelect`（选课下拉，记住上次选择）。
+- 选中的课程 uuid 通过 `courseUuid` prop 传给你的组件。
+- 未选课时 `courseUuid` 是 `undefined`。这时**不要发请求**，渲染一句
+  `t('ext.common.course_required')` 就行。
+
+**不要自己再写一个选课下拉**，否则五个工具会有五种选法。
+
+### 共用组件
+
+从 `@components/SysuTools/shared` 引：
+
+| 组件 | 干什么 |
+| --- | --- |
+| `ToolPageHeader` | 页头三件套（面包屑 + H1 + 副标题 + Tab 条）。路由页已经渲染了，工具组件里不用再写 |
+| `CourseSelect` | 选课下拉。由路由页按 `courseScoped` 渲染，一般你不用直接引 |
+| `DataTable` | 表格。骨架屏 / 空态 / 刷新遮罩三态内置 |
+| `ExportCsvButton` | 导出 CSV，自带 UTF-8 BOM（不加的话 Excel 打开中文列名乱码） |
+| `ConfirmDanger` | 危险操作确认，包的是上游 `ConfirmationModal` |
+
+`DataTable` 用法：
+
+```tsx
+const columns: DataTableColumn<Row>[] = [
+  { key: 'name', header: t('ext.tools.gradebook.student'),
+    cell: (r) => <span className="font-semibold text-gray-800 text-sm">{r.name}</span> },
+  { key: 'actions', header: t('ext.common.actions'), align: 'end',
+    cell: (r) => <ConfirmDanger … /> },
+]
+
+<DataTable
+  columns={columns}
+  rows={rows}
+  rowKey={(r) => r.uuid}
+  isInitialLoading={!data && isFetching}
+  isRefreshing={!!data && isFetching}
+/>
+```
+
+`cell` 返回 `null` / `undefined` / `''` 会自动画成灰色的「—」，不用自己判空。
+
+### i18n
+
+文案放 `apps/web/locales/ext/zh.json` 与 `en.json`，**两份都要写**。
+
+这两个文件不是独立的 i18next namespace，而是在 `lib/i18n.ts` 里并进 `common` 的
+`ext` 顶层 key，所以组件里照常 `t('ext.tools.gradebook.title')` 就能用。
+
+为什么不直接往 `locales/zh.json` 里插：那是上游的地盘，两个 4000 多条的大文件，
+rebase 时必冲突。
+
+只维护中英两份，其他 20 种语言由 `fallbackLng: 'en'` 兜底。
+
+**`lib/i18n.ts` 里那段合并逻辑有个顺序坑**：ext 的 bundle 必须在主语言包
+`addResourceBundle` **之后**再加。提前加会让 `hasResourceBundle(code, 'common')`
+提前变成 true，主语言包就永远不会加载，整个后台变英文。骨架里已经写对了，别去动它。
+
+### 命令面板
+
+`apps/web/app/orgs/[orgslug]/dash/tools/page.search.ts` 里追加一条：
+
+```ts
+{
+  id: 'dash.tools.gradebook',
+  titleKey: 'ext.tools.gradebook.title',
+  descriptionKey: 'ext.search.gradebook.description',
+  keywordsKey: 'ext.search.gradebook.keywords',
+  icon: BookOpen,          // 这里用 @phosphor-icons/react（搜索元数据是 Phosphor 的地盘）
+  href: '/dash/tools/gradebook',
+  group: 'content',
+}
+```
+
+`lib/dashboard-search/registry.ts` 已经把整个数组引进去了，不用再改。
+
+---
+
+## 后端扩展点
+
+### 子路由
+
+`apps/api/src/routers/ext/gradebook.py`：
+
+```python
+from fastapi import APIRouter, Depends
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.core.events.database import get_db_session
+from src.db.users import PublicUser
+from src.routers.ext.deps import require_teacher
+
+router = APIRouter()
+
+
+@router.get(
+    "/gradebook/{course_uuid}",
+    tags=["ext"],
+    summary="Read the gradebook for a course",
+    description="…",                       # summary/description/responses 是必填的，OpenAPI 对外可见
+    responses={200: {...}, 403: {...}},
+)
+async def api_read_gradebook(
+    *,
+    course_uuid: str,
+    org_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser = Depends(require_teacher),
+):
+    return await read_gradebook(db_session, current_user, org_id, course_uuid)
+```
+
+然后在 `apps/api/src/routers/ext/__init__.py` 的 `SUBMODULES` 里加 `"gradebook"`。
+需要统一前缀的话写成元组 `("gradebook", "/gradebook")`，路由装饰器里就不用重复写了。
+
+`src/router.py` 已经把整个 `ext_router` 挂在 `/api/v1/ext` 上，**不要再去改它**。
+挂载时统一加了 `require_authenticated_user`（拒绝匿名、拒绝 API token）。
+
+### 权限：两道门
+
+**第一道（组织级）**：`require_teacher`，放行 Admin / Maintainer / Instructor。
+
+它的实现就是查角色 rights 里的 `dashboard.action_access`。这不是近似而是精确等价：
+`src/services/setup/setup.py` 里四个内置全局角色中，Admin(1) / Maintainer(2) /
+Instructor(3) 这一位是 True，User(4) 是 False；超级管理员由底层直接放行。
+前端 `useAdminStatus().isAdmin` 读的也是这一位，所以前后端口径完全一致。
+
+**它把 `org_id` 声明成了 query 参数**，所以挂了这个依赖的接口，调用方必须带
+`?org_id=<id>`。前端 `useOrg()` 里就有 `org.id`。
+
+服务层里想手动检查用 `verify_teacher(user, org_id, db_session)`，签名一样，
+不走 FastAPI 依赖注入。
+
+**第二道（课程级）**：`require_teacher` 只管「你是这个组织的老师」，管不了
+「这门课是不是你的」。凡是按课程取数的接口都必须再收窄一次，用上游的
+
+```python
+await authorization_verify_based_on_roles_and_authorship(
+    request, current_user.id, "read", course_uuid, db_session)
+```
+
+写操作的 service 函数开头**必须**做这道检查，**且必须传 org_id**——上游注释写明了
+这是防跨组织 IDOR 的。前端对应的判断是 `useCourseRights(courseuuid)`。
+
+### 业务逻辑与模型
+
+- 逻辑放 `src/services/ext/<tool>.py`，路由层只做 HTTP 与依赖注入。
+- 新表放 `src/db/ext/<tool>.py`，四件套约定（Base / table / Create / Update / Read、
+  `<entity>_uuid` 对外主键、`org_id` 外键带 `ondelete="CASCADE"`、日期是字符串）
+  照抄 `src/db/usergroups.py`。
+- 迁移走 alembic，revision 消息带 `[sysu-sam]` 前缀。
+- **不要加 `require_plan(...)`**，本地部署没有 SaaS 套餐概念。
+
+---
+
+## 测试
+
+### 后端 pytest
+
+放 `apps/api/src/tests/ext/`，直接用 `src/tests/conftest.py` 已有的 fixture
+（`db` / `org` / `other_org` / `admin_user` / `regular_user` / `course` …）。
+
+跑法：
+
+```sh
+cd apps/api
+uv run pytest src/tests/ext/ -q
+uv run ruff check src/routers/ext src/services/ext src/tests/ext
+```
+
+`src/tests/ext/test_health.py` 里有现成的范例：怎么造一个 Instructor 角色的用户、
+怎么断言跨组织被 403。**每个工具至少要有一条「普通 User 被 403」和一条
+「跨组织被 403」**。
+
+> **本机环境提醒（Apple Silicon）**：`greenlet` 在 `uv.lock` 里的 marker 排除了
+> arm64 macOS，不装它所有异步 DB 测试都会 `ValueError: the greenlet library is
+> required`。修法是 `uv pip install greenlet`（只装进 venv，**不要**改 pyproject
+> 或 uv.lock，CI 跑的是 linux x86_64 不受影响）。
+
+### 前端 e2e
+
+放 `apps/e2e/features/ext/tests/`，复用已有的 Playwright 基建，**不要另起一套**
+（`apps/web` 下没有 e2e 基建，`bun test tests` 那套只跑纯逻辑单测）。
+
+对着自己起的 dev 服务跑：
+
+```sh
+cd apps/e2e
+E2E_SKIP_BOOT=1 \
+E2E_BASE_URL=http://localhost:3001 \
+E2E_API_URL=http://localhost:9001/api/v1 \
+E2E_ADMIN_EMAIL=user1@example.local \
+E2E_ADMIN_PASSWORD='LocalDev#2026' \
+E2E_STUDENT_EMAIL=user2@example.local \
+E2E_STUDENT_PASSWORD='LocalDev#2026' \
+bun run test features/ext
+```
+
+端口按 PHASE3_BRIEF 自行错开（后端 9001-9009、前端 3001-3009）。
+
+两个已经踩过的坑，骨架里已经修好，你直接用就行：
+
+- `E2E_STUDENT_EMAIL` / `E2E_STUDENT_PASSWORD` 是骨架新加的。本地复刻库的组织开了
+  邀请制，`global-setup` 原本的「新建一个学生账号」会被 403 顶回来；设了这两个变量
+  就改成复用已有账号。`user2@example.local` 本来就是 User 角色。
+- 登录选择器改成了中英兼容的正则。组织配置把界面锁成中文，原来写死的英文
+  accessible name 一个都匹配不上。
+
+### 本地环境
+
+后端从源码起时要连 `learnhouse-local` 的 Postgres/Redis，但那套 compose 没把它们
+映射到宿主机。骨架起了两个 socat 转发容器（一次性的，还在跑就不用再起）：
+
+```sh
+NET=learnhouse-local_learnhouse-network-local
+docker run -d --name lh-db-fwd-15432    --network $NET -p 15432:5432 \
+  alpine/socat:1.8.0.0 "TCP-LISTEN:5432,fork,reuseaddr" "TCP:learnhouse-db-local:5432"
+docker run -d --name lh-redis-fwd-16379 --network $NET -p 16379:6379 \
+  alpine/socat:1.8.0.0 "TCP-LISTEN:6379,fork,reuseaddr" "TCP:learnhouse-redis-local:6379"
+```
+
+然后 `apps/api/.env` 里连 `127.0.0.1:15432` / `127.0.0.1:16379`。
+`.env` 与 `.env.local` 都是 gitignore 的，不会进仓库。
+
+工具链版本：`uv` 要 0.12 以上（0.10 装不了 3.14.7），`bun` 要 1.4 以上
+（1.3 读不了这个 lockfile 格式）。
+
+---
+
+## QA 文档模板
+
+每个功能在 `docs/sysu-sam/QA/<功能名>.md` 留一份，脱敏。骨架的在
+`docs/sysu-sam/QA/skeleton.md`，照抄结构即可：
+
+```markdown
+# <功能名> QA
+
+- 环境：本地预发（learnhouse-local，端口 18088），后端源码 :90xx，前端 dev :30xx
+- 日期：YYYY-MM-DD
+- 账号：管理员 user1@example.local；普通成员 user2@example.local（均已脱敏）
+
+## 自动化
+
+| 项 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端单测 | `uv run pytest src/tests/ext/... -q` | N passed |
+| 后端 lint | `uv run ruff check ...` | All checks passed |
+| 前端 lint | `bun run lint:strict` | 新代码 0 error |
+| e2e | `bun run test features/ext` | N passed |
+
+## 手工核对
+
+- [ ] 视觉与 UI_GUIDE 一致（页头三件套、卡片 nice-shadow、表格样式）
+- [ ] 中英文案都有
+- [ ] 窄屏（390px）不横向溢出
+- [ ] 普通 User 看不到入口，直接访问被拦
+
+## 截图
+
+`docs/sysu-sam/QA/<功能名>/` 下。
+
+## 未做 / 已知问题
+
+写清楚，别藏。
+```
+
+---
+
+## 改上游文件的规矩
+
+骨架已经把该改的都改完了（清单见 `docs/sysu-sam/QA/skeleton.md`）。
+你如果**还是**需要改某个上游文件，改动包一层注释：
+
+```
+/* --- SYSU-SAM: 干什么 --- */
+…
+/* --- /SYSU-SAM --- */
+```
+
+JSX 里要写成 `{/* --- SYSU-SAM --- */}`，裸的 `/* */` 会被当成文本渲染出来。

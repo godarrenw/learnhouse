@@ -1,0 +1,64 @@
+{
+  "title": "Teaching Tools",
+  "subtitle": "Extra dashboard tools built for teaching at SYSU SAM",
+  "breadcrumb": "Teaching Tools",
+  "overview": {
+    "title": "Teaching Tools",
+    "subtitle": "Pick a tool to get started",
+    "empty": "No teaching tools available yet",
+    "enter": "Open",
+    "tab": "All tools"
+  },
+  "search": {
+    "overview": {
+      "description": "Entry point for every teaching tool",
+      "keywords": "teaching,tools,dashboard"
+    },
+    "example": {
+      "description": "Check that the teaching tools extension is wired up",
+      "keywords": "example,health,self check"
+    }
+  },
+  "common": {
+    "loading": "Loading…",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "error": "Failed to load",
+    "no_data": "No data yet",
+    "no_results": "No matching results",
+    "clear_filters": "Clear filters",
+    "actions": "Actions",
+    "export_csv": "Export CSV",
+    "exporting": "Exporting…",
+    "export_success": "Exported {{count}} rows",
+    "export_empty": "Nothing to export",
+    "select_course": "Select a course",
+    "course": "Course",
+    "no_courses": "This organization has no courses yet",
+    "course_required": "Pick a course first",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleting": "Deleting…"
+  },
+  "tools": {
+    "example": {
+      "title": "Extension Health",
+      "description": "Calls the backend /ext/health endpoint to prove the teaching tools extension points are connected.",
+      "page_subtitle": "The skeleton's sample tool — every other tool plugs in the same way",
+      "fetch": "Run check again",
+      "loaded": "Extension layer is reachable",
+      "error": "Could not reach the extension layer — is /ext mounted on the API?",
+      "field": "Field",
+      "value": "Value",
+      "status": "Status",
+      "ext_version": "Extension version",
+      "org_id": "Organization id",
+      "user_id": "Current user id",
+      "username": "Username",
+      "role": "Role in organization",
+      "tools": "Mounted tools",
+      "role_unknown": "Superadmin (not a member of this organization)"
+    }
+  }
+}

@@ -50,3 +50,8 @@ next.config.original.js
 # Runtime config (generated at startup by server-wrapper.js)
 public/runtime-config.js
 runtime-config.json
+
+# --- SYSU-SAM: next dev 每次启动都会重新生成这两个文件，别让它们污染工作区 ---
+/AGENTS.md
+/CLAUDE.md
+# --- /SYSU-SAM ---

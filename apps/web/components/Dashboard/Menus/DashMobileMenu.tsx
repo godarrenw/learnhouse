@@ -26,6 +26,9 @@ import {
   CaretDown,
   MagnifyingGlass,
   Code,
+  /* --- SYSU-SAM: 教学工具图标 --- */
+  Wrench,
+  /* --- /SYSU-SAM --- */
 } from '@phosphor-icons/react'
 import { DiscordIcon } from '@components/Objects/Icons/DiscordIcon'
 import Link from 'next/link'
@@ -128,6 +131,9 @@ function DashMobileMenu() {
           {isEnabled('payments') && (
             <PillLink href="/dash/payments/overview" icon={<CurrencyCircleDollar size={18} weight="fill" />} active={isActive('/dash/payments')} className="hidden min-[750px]:flex" />
           )}
+          {/* --- SYSU-SAM: 教学工具，接在断点序列最后 --- */}
+          <PillLink href="/dash/tools" icon={<Wrench size={18} weight="fill" />} active={isActive('/dash/tools')} className="hidden min-[790px]:flex" />
+          {/* --- /SYSU-SAM --- */}
 
           <span className="w-px h-4 bg-white/[0.15] mx-1 shrink-0" />
 
@@ -231,6 +237,9 @@ function DashMobileMenu() {
                 <PanelItem href="/dash/analytics" icon={<ChartBar size={15} weight="fill" />} label="Analytics" active={isActive('/dash/analytics')} onClick={close} />
                 <PanelItem href="/dash/org/settings/general" icon={<Buildings size={15} weight="fill" />} label={t('common.organization')} active={isActive('/dash/org')} onClick={close} />
                 <PanelItem href="/dash/developers/api" icon={<Code size={15} weight="fill" />} label={t('dashboard.developers.breadcrumb', { defaultValue: 'Developers' })} active={isActive('/dash/developers')} onClick={close} />
+                {/* --- SYSU-SAM: 教学工具 --- */}
+                <PanelItem href="/dash/tools" icon={<Wrench size={15} weight="fill" />} label={t('ext.title')} active={isActive('/dash/tools')} onClick={close} />
+                {/* --- /SYSU-SAM --- */}
 
                 <div className="h-px bg-white/[0.05] mx-2 my-1.5" />
 

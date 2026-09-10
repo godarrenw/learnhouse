@@ -12,6 +12,9 @@ import {
   Headphones,
   ChartBar,
   Code,
+  /* --- SYSU-SAM: 教学工具图标 --- */
+  Wrench,
+  /* --- /SYSU-SAM --- */
 } from '@phosphor-icons/react'
 
 export interface DashboardMenuItem {
@@ -81,6 +84,16 @@ export const DASHBOARD_MENU_ITEMS: DashboardMenuItem[] = [
     featureKey: 'playgrounds',
     defaultDisabled: true,
   },
+  /* --- SYSU-SAM: 教学工具入口 --- */
+  // 不设 featureKey：这是部署方自建的功能，不走 LearnHouse 的 resolved_features
+  // 开关体系，后端没有对应定义会被判成不可用。
+  {
+    id: 'sysu-tools',
+    href: '/dash/tools',
+    icon: Wrench,
+    labelKey: 'ext.title',
+  },
+  /* --- /SYSU-SAM --- */
   {
     id: 'users',
     href: '/dash/users/settings/users',

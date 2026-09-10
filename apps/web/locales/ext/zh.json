@@ -1,0 +1,64 @@
+{
+  "title": "教学工具",
+  "subtitle": "先进智造学堂为课程教学补充的一组后台工具",
+  "breadcrumb": "教学工具",
+  "overview": {
+    "title": "教学工具",
+    "subtitle": "选择一个工具开始",
+    "empty": "还没有可用的教学工具",
+    "enter": "进入",
+    "tab": "全部工具"
+  },
+  "search": {
+    "overview": {
+      "description": "所有教学工具的入口",
+      "keywords": "教学工具,工具,tools,教学"
+    },
+    "example": {
+      "description": "验证教学工具扩展点是否连通",
+      "keywords": "示例,自检,health,example"
+    }
+  },
+  "common": {
+    "loading": "正在加载…",
+    "retry": "重试",
+    "refresh": "刷新",
+    "error": "加载失败",
+    "no_data": "暂无数据",
+    "no_results": "没有符合条件的结果",
+    "clear_filters": "清除筛选",
+    "actions": "操作",
+    "export_csv": "导出 CSV",
+    "exporting": "正在导出…",
+    "export_success": "已导出 {{count}} 行",
+    "export_empty": "没有可导出的数据",
+    "select_course": "选择课程",
+    "course": "课程",
+    "no_courses": "该组织下还没有课程",
+    "course_required": "请先选择一个课程",
+    "confirm": "确认",
+    "cancel": "取消",
+    "delete": "删除",
+    "deleting": "正在删除…"
+  },
+  "tools": {
+    "example": {
+      "title": "扩展自检",
+      "description": "调用后端 /ext/health，确认教学工具的前后端扩展点已经打通。",
+      "page_subtitle": "这是骨架自带的示例工具，其他工具按同样的方式接入",
+      "fetch": "重新检测",
+      "loaded": "扩展层连通正常",
+      "error": "无法连接扩展层，请检查后端是否已挂载 /ext",
+      "field": "字段",
+      "value": "取值",
+      "status": "状态",
+      "ext_version": "扩展层版本",
+      "org_id": "组织 id",
+      "user_id": "当前用户 id",
+      "username": "用户名",
+      "role": "组织内角色",
+      "tools": "已挂载的工具",
+      "role_unknown": "超级管理员（不属于本组织）"
+    }
+  }
+}

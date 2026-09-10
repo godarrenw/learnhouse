@@ -14,9 +14,13 @@ export async function uiLogin(page: Page, email: string, password: string): Prom
   const maxAttempts = 3
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await page.goto(`${BASE_URL}/login`)
-    await page.getByRole('textbox', { name: 'Email' }).fill(email)
-    await page.getByRole('textbox', { name: 'Password' }).fill(password)
-    await page.getByRole('button', { name: 'Login', exact: true }).click()
+    /* --- SYSU-SAM: 选择器兼容中文界面 --- */
+    // 组织可以在配置里锁定界面语言（本部署锁的是中文），这时英文的
+    // accessible name 一个都匹配不上。用正则同时认中英两套。
+    await page.getByRole('textbox', { name: /^(Email|电子邮件)$/ }).fill(email)
+    await page.getByRole('textbox', { name: /^(Password|密码)$/ }).fill(password)
+    await page.getByRole('button', { name: /^(Login|登录)$/ }).click()
+    /* --- /SYSU-SAM --- */
     try {
       // On success the app leaves /login (lands on the org home or dashboard).
       await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 12_000 })

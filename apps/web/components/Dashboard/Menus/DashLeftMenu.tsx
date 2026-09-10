@@ -523,6 +523,20 @@ function DashLeftMenu() {
                 active={isActivePath('/dash/playgrounds')}
               />
             )}
+            {/* --- SYSU-SAM: 教学工具入口 --- */}
+            {/* 整块菜单已在 <AdminAuthorization authorizationMode="component"> 内，
+                isAdmin 读的就是 rights.dashboard.action_access —— 恰好等于
+                Admin / Maintainer / Instructor 三个角色，与后端 require_teacher
+                同口径，所以这里不用再加权限判断。 */}
+            <MenuLink
+              href="/dash/tools"
+              icon={<Wrench size={20} weight="fill" />}
+              label={t('ext.title')}
+              isCollapsed={isCollapsed}
+              active={isActivePath('/dash/tools')}
+            />
+            {/* --- /SYSU-SAM --- */}
+
             {/* Users with hover menu */}
             <HoverMenu
               content={

@@ -13,6 +13,9 @@ import { searchMetas as users } from '@/app/orgs/[orgslug]/dash/users/page.searc
 import { searchMetas as org } from '@/app/orgs/[orgslug]/dash/org/page.search'
 import { searchMetas as payments } from '@/app/orgs/[orgslug]/dash/payments/page.search'
 import { searchMetas as account } from '@/app/orgs/[orgslug]/(withmenu)/account/page.search'
+/* --- SYSU-SAM: 教学工具 --- */
+import { searchMetas as sysuTools } from '@/app/orgs/[orgslug]/dash/tools/page.search'
+/* --- /SYSU-SAM --- */
 
 export const dashboardPages: SearchMeta[] = [
   home,
@@ -28,4 +31,7 @@ export const dashboardPages: SearchMeta[] = [
   ...org,
   ...payments,
   ...account,
+  /* --- SYSU-SAM: 教学工具 --- */
+  ...sysuTools,
+  /* --- /SYSU-SAM --- */
 ]

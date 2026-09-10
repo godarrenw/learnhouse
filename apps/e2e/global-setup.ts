@@ -21,6 +21,10 @@ import {
   PORT,
   SKIP_BOOT,
   makeStudent,
+  /* --- SYSU-SAM --- */
+  SHARED_STUDENT_EMAIL,
+  SHARED_STUDENT_PASSWORD,
+  /* --- /SYSU-SAM --- */
 } from './core/instance'
 import * as api from './core/client'
 import {
@@ -112,8 +116,23 @@ async function generateSharedAuth(): Promise<void> {
   // Create the reusable student via API (admin token is cached by api.login).
   const adminToken = await api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
   const org = await api.getOrg()
-  const stu = makeStudent('shared')
-  const studentId = await api.createStudent(adminToken, org.id, stu)
+  /* --- SYSU-SAM: 组织开了邀请制时无法新建用户，改为复用已有账号 --- */
+  let stu: { email: string; username: string; password: string }
+  let studentId: number
+  if (SHARED_STUDENT_EMAIL && SHARED_STUDENT_PASSWORD) {
+    stu = {
+      email: SHARED_STUDENT_EMAIL,
+      username: SHARED_STUDENT_EMAIL.split('@')[0],
+      password: SHARED_STUDENT_PASSWORD,
+    }
+    // 复用已有账号时不查 id：拿它的会话跑 UI 就够了，需要 id 的用例自己去查。
+    studentId = 0
+    console.log(`Reusing existing member account ${stu.email} (student creation skipped).`)
+  } else {
+    stu = makeStudent('shared')
+    studentId = await api.createStudent(adminToken, org.id, stu)
+  }
+  /* --- /SYSU-SAM --- */
   writeSharedStudent({ email: stu.email, username: stu.username, password: stu.password, id: studentId })
 
   const browser = await chromium.launch()
@@ -136,9 +155,11 @@ async function saveLogin(
   const page = await context.newPage()
   for (let attempt = 1; attempt <= 3; attempt++) {
     await page.goto(`${BASE_URL}/login`)
-    await page.getByRole('textbox', { name: 'Email' }).fill(email)
-    await page.getByRole('textbox', { name: 'Password' }).fill(password)
-    await page.getByRole('button', { name: 'Login', exact: true }).click()
+    /* --- SYSU-SAM: 同 core/auth.ts，选择器兼容中文界面 --- */
+    await page.getByRole('textbox', { name: /^(Email|电子邮件)$/ }).fill(email)
+    await page.getByRole('textbox', { name: /^(Password|密码)$/ }).fill(password)
+    await page.getByRole('button', { name: /^(Login|登录)$/ }).click()
+    /* --- /SYSU-SAM --- */
     try {
       await page.waitForURL((u) => !/\/login(\?|$)/.test(u.toString()), { timeout: 12_000 })
       break

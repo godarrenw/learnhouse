@@ -25,6 +25,19 @@ export const ORG_SLUG = process.env.E2E_ORG_SLUG || 'default'
 export const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@school.dev'
 export const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'E2eTestAdmin!234'
 
+/* --- SYSU-SAM: 复用一个已有的普通成员账号 --- */
+/**
+ * 已有的普通成员（User 角色）账号。设了这两个变量，global-setup 就不再新建学生，
+ * 直接复用它。
+ *
+ * 为什么需要：本地预发环境（learnhouse-local）是从生产备份恢复的，组织开了
+ * 「需要邀请码才能加入」，`createStudent` 会被 403 顶回来。那套库里
+ * `user2@example.local` 本来就是 User 角色，拿来当反面用例正合适。
+ */
+export const SHARED_STUDENT_EMAIL = process.env.E2E_STUDENT_EMAIL || ''
+export const SHARED_STUDENT_PASSWORD = process.env.E2E_STUDENT_PASSWORD || ''
+/* --- /SYSU-SAM --- */
+
 /** CLI install name (also the docker-compose project dir under ~/.learnhouse). */
 export const INSTALL_NAME = process.env.E2E_INSTALL_NAME || 'e2e'
 
