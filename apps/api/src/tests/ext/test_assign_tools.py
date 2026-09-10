@@ -28,6 +28,7 @@ from src.db.courses.assignments import (
 )
 from src.db.courses.chapter_activities import ChapterActivity
 from src.db.users import User
+from src.security.rbac import AccessAction
 from src.services.ext.assign_tools import clone as clone_svc
 from src.services.ext.assign_tools import draft as draft_svc
 from src.services.ext.assign_tools import llm as llm_mod
@@ -1128,6 +1129,109 @@ async def test_restore_backs_up_current_first(
     )).scalars().first()
     assert backup is not None
     assert "CNC" in tiptap_to_markdown(backup.content)
+
+
+# --- 权限：只读接口也按「能改这门课的人」判 ---------------------------------
+
+_VERSION_READERS = ("list_versions", "version_markdown", "diff_versions")
+
+
+def _args_for(name, activity_uuid, user, db):
+    """三个只读接口签名不一样，这里统一成一串位置参数。"""
+    if name == "version_markdown":
+        return (activity_uuid, 1, user, db)
+    if name == "diff_versions":
+        return (activity_uuid, 1, None, user, db)
+    return (activity_uuid, user, db)
+
+
+@pytest.mark.parametrize("func_name", _VERSION_READERS)
+async def test_version_readers_require_course_update_not_read(
+    db, org, course, versioned_page, admin_user, mock_request, bypass_usage, func_name,
+):
+    """公开课程的 READ 对任何登录用户都成立，所以这几个只读接口必须按 UPDATE 判。
+
+    它们返回的是内容页的历史稿和逐行 diff（包括没发布的草稿），属于「他人数据」。
+    用 READ 判等于把本组织每一门课的编辑历史开放给每个教师账号。
+    """
+    spy = AsyncMock()
+    with patch("src.services.ext.assign_tools.versions.check_resource_access", new=spy):
+        with patch(
+            "src.services.courses.activities.versioning.check_resource_access",
+            new=AsyncMock(),
+        ):
+            await getattr(ver_svc, func_name)(
+                mock_request, *_args_for(func_name, versioned_page.activity_uuid, admin_user, db)
+            )
+    assert spy.await_count >= 1
+    actions = {call.args[4] for call in spy.await_args_list}
+    assert actions == {AccessAction.UPDATE}
+
+
+async def test_restore_preview_requires_course_update_not_read(
+    db, org, course, versioned_page, admin_user, mock_request, bypass_usage,
+):
+    """回滚预览返回完整 diff，和上面三个是同一类，不能因为「只是预览」就放低门槛。"""
+    spy = AsyncMock()
+    with patch("src.services.ext.assign_tools.versions.check_resource_access", new=spy):
+        with patch(
+            "src.services.courses.activities.versioning.check_resource_access",
+            new=AsyncMock(),
+        ):
+            out = await ver_svc.restore(
+                mock_request, versioned_page.activity_uuid, 1, admin_user, db, confirm=False,
+            )
+    assert out["confirmed"] is False
+    actions = {call.args[4] for call in spy.await_args_list}
+    assert actions == {AccessAction.UPDATE}
+
+
+@pytest.mark.parametrize("func_name", _VERSION_READERS)
+async def test_version_readers_reject_plain_user(
+    db, org, course, versioned_page, regular_user, mock_request, bypass_usage, func_name,
+):
+    """User 角色（能看公开课程，但不能改）走真实 RBAC，应该被 403 顶回来。"""
+    with patch(
+        "src.services.courses.activities.versioning.check_resource_access",
+        new=AsyncMock(),
+    ):
+        with pytest.raises(HTTPException) as e:
+            await getattr(ver_svc, func_name)(
+                mock_request,
+                *_args_for(func_name, versioned_page.activity_uuid, regular_user, db),
+            )
+    assert e.value.status_code == 403
+
+
+async def test_restore_preview_rejects_plain_user(
+    db, org, course, versioned_page, regular_user, mock_request, bypass_usage,
+):
+    with patch(
+        "src.services.courses.activities.versioning.check_resource_access",
+        new=AsyncMock(),
+    ):
+        with pytest.raises(HTTPException) as e:
+            await ver_svc.restore(
+                mock_request, versioned_page.activity_uuid, 1, regular_user, db, confirm=False,
+            )
+    assert e.value.status_code == 403
+
+
+async def test_quiz_results_and_similarity_reject_plain_user(
+    db, org, course, chapter, activity, regular_user, mock_request,
+):
+    """结果面板和查重返回名单与他人提交，同样只对能改这门课的人开放。"""
+    assignment = await _make_assignment(db, org, course, chapter, activity, aid=130)
+    with pytest.raises(HTTPException) as e:
+        await quiz_svc.quiz_results(
+            mock_request, assignment.assignment_uuid, regular_user, db
+        )
+    assert e.value.status_code == 403
+    with pytest.raises(HTTPException) as e:
+        await sim_svc.check_assignment(
+            mock_request, assignment.assignment_uuid, regular_user, db
+        )
+    assert e.value.status_code == 403
 
 
 async def test_versions_404(db, org, course, admin_user, mock_request, bypass_ext_rbac):

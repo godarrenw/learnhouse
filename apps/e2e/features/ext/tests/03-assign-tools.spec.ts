@@ -21,6 +21,7 @@ import { ADMIN_STATE } from '../../../core/sharedAuth'
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
+  API_URL,
   ORG_SLUG,
   SHARED_STUDENT_EMAIL,
   SHARED_STUDENT_PASSWORD,
@@ -61,6 +62,8 @@ const CLONE_NAME_PREFIX = 'E2E 复用 '
 let fixture: AssignFixture
 let adminToken: string
 let cloneName: string
+/** 普通成员（User 角色）的 token，用来验越权被拦。没有就跳过那条用例。 */
+let plainUserToken: string | undefined
 
 test.beforeAll(async () => {
   adminToken = await login(ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -73,6 +76,7 @@ test.beforeAll(async () => {
   if (SHARED_STUDENT_EMAIL && SHARED_STUDENT_PASSWORD) {
     try {
       studentToken = await login(SHARED_STUDENT_EMAIL, SHARED_STUDENT_PASSWORD)
+      plainUserToken = studentToken
       const me = await req<any>('GET', '/users/session', studentToken)
       studentId = me?.user?.id ?? me?.id
     } catch {
@@ -249,6 +253,28 @@ test('版本回滚能列出历史版本，并给出两栏与合并两种 diff', 
   await page.getByTestId('assign-ver-view-unified').click()
   await expect(page.getByTestId('assign-ver-unified')).toBeVisible()
   await maybeShot(page, '7-versions-unified', page.getByTestId('assign-ver-unified'))
+})
+
+test('普通成员拿不到别人课的版本历史与名单', async () => {
+  test.skip(!plainUserToken, '这套实例没有可用的普通成员账号')
+
+  // 这几个接口都是只读的，但返回的是他人数据（未发布的历史稿、逐行 diff、
+  // 交卷名单），所以课程级那道门按「能改这门课的人」判，不按「能看」判 ——
+  // 公开课程的 read 对任何登录用户都成立。
+  const cases: Array<[string, string]> = [
+    ['版本列表', `/ext/assign/activities/${fixture.pageActivityUuid}/versions`],
+    ['版本 diff', `/ext/assign/activities/${fixture.pageActivityUuid}/diff?a=1`],
+    ['随堂测结果', `/ext/assign/assignments/${fixture.quizAssignmentUuid}/results`],
+    ['查重', `/ext/assign/assignments/${fixture.quizAssignmentUuid}/similarity`],
+  ]
+
+  for (const [label, path] of cases) {
+    const joiner = path.includes('?') ? '&' : '?'
+    const res = await fetch(`${API_URL}${path}${joiner}org_id=${fixture.org.id}`, {
+      headers: { Authorization: `Bearer ${plainUserToken}` },
+    })
+    expect(res.status, `${label} 应该拒绝普通成员`).toBe(403)
+  }
 })
 
 test('窄屏下页面不横向溢出', async ({ page }) => {

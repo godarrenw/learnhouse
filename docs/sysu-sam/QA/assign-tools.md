@@ -12,6 +12,24 @@ service 调 `check_resource_access` 收窄。
 **每个接口都要带 `?org_id=<org.id>`** —— 这是 `require_teacher` 把 `org_id` 声明成
 query 参数带来的硬要求，前端的 `services/ext/assign.ts` 统一在 URL 里拼上。
 
+### 只读接口为什么也按 update 判
+
+凡是会返回名单、成绩、他人提交内容、未发布草稿的接口，**哪怕它是只读的**，课程级
+那道门都按 `AccessAction.UPDATE` 判，也就是按「能改这门课的人」判。理由是公开课程的
+READ 对任何登录用户都成立，用 READ 判等于把数据开放给了不该看的人 —— Instructor
+角色尤其不该看到别人课的编辑历史。
+
+按这个口径判 UPDATE 的有：`results`、`similarity`、`versions`、`versions/{n}/markdown`、
+`diff`、以及 `restore` 的 `confirm=false` 预览分支（它返回完整 diff，和上面几个是同一类
+东西，不能因为「只是预览」就放低门槛）。版本那几个接口内部还会经过上游
+`get_activity_versions` 自带的一道 READ，留着无妨：更严的这道先过。
+
+**一个例外是 `clone-term` 读源课程，仍然按 READ 判。** 它不会泄露调用者本来看不到的
+东西：能 READ 一门课就能看它的章节与内容页，摘要里多出的只是作业标题和截止日期；
+而克隆产出的是调用者自己组织里的新课程，上游 `clone_course` 内部还有 READ + 建课权限
++ 组织成员三道检查。收紧到 UPDATE 会把「新老师复用同事的课」这种正当用法一并挡掉，
+不划算。目标侧（`shift-due` 改截止日期）按 UPDATE 判。
+
 | 方法 | 路径 | 做什么 |
 |---|---|---|
 | POST | `/spec/validate` | 校验一份作业 spec，返回每题预览与警告。纯本地，不联网不写库 |
@@ -73,11 +91,11 @@ query 参数带来的硬要求，前端的 `services/ext/assign.ts` 统一在 UR
 
 ### 4.1 后端单测
 
-`apps/api/src/tests/ext/test_assign_tools.py`，52 条；连骨架与学情的 ext 测试一起 100 条全过：
+`apps/api/src/tests/ext/test_assign_tools.py`，61 条；连骨架与学情的 ext 测试一起 117 条全过：
 
 ```
 $ cd apps/api && uv run pytest src/tests/ext -q
-100 passed
+117 passed
 $ uv run ruff check src/
 All checks passed!
 ```
@@ -105,6 +123,9 @@ All checks passed!
 - 批量顺延：试算不改库、执行才改；`only_future` 跳过已过期；日期解析失败跳过
 - 版本：列表带当前版本号、按版本取 Markdown、两版 diff 行数正确、
   和「当前」比较、试算不写库、**回滚后旧稿被存成了新版本**（断言查得到）
+- 权限：三个只读的版本接口与回滚预览都断言了「问的是 UPDATE 不是 READ」，
+  另有四条走真实 RBAC 的用例，User 角色调 versions / diff / results / similarity
+  一律 403。这几条不是摆设 —— 把守卫去掉重跑，它们会红
 
 LLM 调用在测试里只 mock 了 `chat_completion` 这一个联网入口。
 
@@ -127,8 +148,8 @@ LLM 调用在测试里只 mock 了 `chat_completion` 这一个联网入口。
 
 ### 4.3 前端 E2E（apps/e2e 套件里的 spec）
 
-`apps/e2e/features/ext/tests/03-assign-tools.spec.ts`，7 条用例，和骨架、学情的 ext
-用例跑在同一个套件里（一起 16 条全过）。
+`apps/e2e/features/ext/tests/03-assign-tools.spec.ts`，8 条用例，和骨架、学情的 ext
+用例跑在同一个套件里（一起 18 条全过）。
 
 夹具在 `features/ext/assign-api.ts`，**全部走 REST API 建、跑完删**，不碰数据库，
 所以对着自己 boot 的干净实例或 `E2E_SKIP_BOOT=1` 指向的本地预发栈都能跑，
@@ -145,7 +166,7 @@ $ E2E_SKIP_BOOT=1 \
   E2E_STUDENT_EMAIL=user2@example.local E2E_STUDENT_PASSWORD='LocalDev#2026' \
   bun run test features/ext
   ...
-  16 passed (31.8s)
+  18 passed (38.2s)
 ```
 
 七条用例分别钉住：
@@ -158,6 +179,7 @@ $ E2E_SKIP_BOOT=1 \
 | 查重 | 后端的免责说明原样出现在页面上（断言含「不是抄袭的结论」）—— 这是产品口径不是装饰 |
 | 学期复用 | 摘要回显新课名与顺延后的 2099-08-30；**并回查课程数没变**，证明 confirm=false 真的没写库 |
 | 版本回滚 | 至少两个历史版本；点最老那一版能 diff 出第一稿的正文；两栏与合并两种视图都在 |
+| 越权 | 普通成员（User 角色）拿自己的 token 直调 versions / diff / results / similarity，四个都 403 |
 | 窄屏 | 400px 下 `scrollWidth <= clientWidth`，不横向溢出 |
 
 学生那一段是**可选**的：本地预发库是邀请制，`createStudent` 会 403。设了
@@ -187,6 +209,9 @@ workspace 都单独跑了一次，都是退出码 0：
 $ cd apps/web && bunx tsc --noEmit -p .      # 退出码 0，无输出
 $ cd apps/e2e && bun run typecheck           # 退出码 0，无输出
 ```
+
+跑 `apps/web` 那条之前 `next-env.d.ts` 必须存在（`next dev` / `next build` 生成，
+被 gitignore）。缺了它会冒出 23 个上游图片模块的假报错，和本次改动无关。
 
 `bun run lint:strict` 在本分支上报 35 个 error，**全部落在上游文件**
 （`services/courses/transfer.ts`、`components/Dashboard/Boards/Extensions/*`、

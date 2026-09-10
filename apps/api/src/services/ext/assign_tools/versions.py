@@ -44,6 +44,27 @@ async def _activity_or_404(activity_uuid: str, db_session: AsyncSession) -> tupl
     return activity, course
 
 
+async def _require_course_editor(
+    request: Request,
+    course: Course,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> None:
+    """版本相关的接口一律按「能改这门课的人」判，而不是「能看这门课的人」。
+
+    这几个接口都是只读的，但它们返回的是内容页的历史稿与逐行 diff —— 包括还没
+    发布的草稿。公开课程的 READ 对任何登录用户都成立，用 READ 判就等于把本组织
+    每一门课的编辑历史开放给了每一个教师账号，Instructor 尤其不该看到别人课的
+    草稿。所以这里显式再要一次 UPDATE。
+
+    上游 `get_activity_versions` / `get_activity_version` 内部还有一道 READ，
+    留着无妨：更严的这道先过。
+    """
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
+
+
 async def list_versions(
     request: Request,
     activity_uuid: str,
@@ -53,6 +74,7 @@ async def list_versions(
 ) -> dict:
     """版本列表，外加当前版本号 —— 前端要靠它把「当前」标出来。"""
     activity, course = await _activity_or_404(activity_uuid, db_session)
+    await _require_course_editor(request, course, current_user, db_session)
     versions = await get_activity_versions(
         request, activity_uuid, current_user, db_session, limit=limit, offset=0
     )
@@ -102,6 +124,7 @@ async def version_markdown(
 ) -> dict:
     """把某个版本的内容渲染成 Markdown 给前端预览。"""
     activity, course = await _activity_or_404(activity_uuid, db_session)
+    await _require_course_editor(request, course, current_user, db_session)
     markdown, label = await _markdown_of(
         request, activity, version_number, current_user, db_session
     )
@@ -128,6 +151,7 @@ async def diff_versions(
     结构噪音，老师看不出改了哪句话。
     """
     activity, course = await _activity_or_404(activity_uuid, db_session)
+    await _require_course_editor(request, course, current_user, db_session)
     text_a, label_a = await _markdown_of(request, activity, a, current_user, db_session)
     text_b, label_b = await _markdown_of(request, activity, b, current_user, db_session)
 
@@ -165,10 +189,9 @@ async def restore(
     activity, course = await _activity_or_404(activity_uuid, db_session)
 
     if not confirm:
-        # 摘要也要走一遍读权限，否则未授权的人能靠它探到内容长度
-        await check_resource_access(
-            request, db_session, current_user, course.course_uuid, AccessAction.READ
-        )
+        # 预览返回的是完整 diff，和上面那三个只读接口是同一类东西，
+        # 所以门槛也一样按 update 判，不能因为「只是预览」就放低。
+        await _require_course_editor(request, course, current_user, db_session)
         preview = await diff_versions(
             request, activity_uuid, None, version_number, current_user, db_session
         )
