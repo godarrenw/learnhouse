@@ -1212,3 +1212,82 @@ class TestAssignmentMarkdown:
             _FakeTask(title="第 1 题", assignment_type=AssignmentTaskTypeEnum.QUIZ,
                       contents={})])
         assert "这道题还没有录入内容" in md
+
+
+# ============================================================ 导入节流
+
+
+class TestIndexThrottle:
+    """导入时把「重建向量索引」的后台任务并发压住。
+
+    上游 `update_activity` 每写一次 content 就起一个后台任务，而那个任务自己新开
+    db session。导上千页就会把 5+10 的连接池占光，后续请求全 500 ——
+    表现得像鉴权坏了。这几条把节流行为钉死。
+    """
+
+    @pytest.mark.asyncio
+    async def test_在飞任务超上限就等到降下来(self, monkeypatch):
+        import asyncio as aio
+
+        import src.services.ext.content_tools.transfer as mod
+
+        released = aio.Event()
+
+        async def _slow():
+            await released.wait()
+
+        tasks = {aio.create_task(_slow()) for _ in range(6)}
+        monkeypatch.setattr(mod, "_inflight_index_tasks", lambda: tasks)
+        monkeypatch.setattr(mod, "MAX_INFLIGHT_INDEX_TASKS", 2)
+
+        throttle = aio.create_task(mod._throttle_index_tasks(1))
+        await aio.sleep(0)
+        # 6 个都卡着，节流必须还在等
+        assert not throttle.done()
+
+        released.set()
+        await aio.wait_for(throttle, timeout=5)
+        await aio.gather(*tasks)
+
+    @pytest.mark.asyncio
+    async def test_在飞任务没超上限就直接过(self, monkeypatch):
+        import asyncio as aio
+
+        import src.services.ext.content_tools.transfer as mod
+
+        monkeypatch.setattr(mod, "_inflight_index_tasks", lambda: set())
+        monkeypatch.setattr(mod, "MAX_INFLIGHT_INDEX_TASKS", 3)
+        await aio.wait_for(mod._throttle_index_tasks(1), timeout=1)
+
+    @pytest.mark.asyncio
+    async def test_上游改名了就退回按页数歇(self, monkeypatch):
+        """`_embedding_tasks` 是上游的模块级私有变量，哪天改名不能把导入带崩。"""
+        import asyncio as aio
+
+        import src.services.ext.content_tools.transfer as mod
+
+        monkeypatch.setattr(mod, "_inflight_index_tasks", lambda: None)
+        monkeypatch.setattr(mod, "_FALLBACK_PAUSE_EVERY", 2)
+        monkeypatch.setattr(mod, "_FALLBACK_PAUSE_SECONDS", 0.01)
+
+        slept = []
+        real_sleep = aio.sleep
+
+        async def _record(seconds):
+            slept.append(seconds)
+            await real_sleep(0)
+
+        monkeypatch.setattr(mod.asyncio, "sleep", _record)
+        await mod._throttle_index_tasks(1)   # 不是第 2 页的倍数，不歇
+        assert slept == []
+        await mod._throttle_index_tasks(2)   # 该歇了
+        assert slept == [0.01]
+
+    def test_能读到上游那个任务集合(self):
+        """如果这条挂了，说明上游把 `_embedding_tasks` 改了，节流已经退化成兜底。"""
+        import src.services.ext.content_tools.transfer as mod
+
+        assert mod._inflight_index_tasks() is not None, (
+            "上游的 _embedding_tasks 不见了，导入节流退回按页数歇 —— "
+            "去 services/courses/activities/activities.py 看它改成什么了"
+        )

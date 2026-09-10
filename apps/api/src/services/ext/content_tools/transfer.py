@@ -19,6 +19,7 @@
 导出是**有损**的：只有内容页和整页嵌入能反向导入，托管视频、PDF、作业不能，
 README 和返回值里都会逐条说明，不静默丢掉。
 """
+import asyncio
 import io
 import logging
 import mimetypes
@@ -47,6 +48,7 @@ from src.db.courses.courses import Course
 from src.db.organizations import Organization
 from src.security.rbac import AccessAction, check_resource_access
 from src.services.blocks.block_types.imageBlock.imageBlock import create_image_block
+from src.services.courses.activities import activities as upstream_activities
 from src.services.courses.activities.activities import create_activity, update_activity
 from src.services.courses.chapters import create_chapter
 from src.services.utils.upload_content import read_content
@@ -76,6 +78,20 @@ IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 
 #: 流式读 zip 条目时每次读多少
 _ZIP_CHUNK = 64 * 1024
+
+#: 导入时最多允许多少个「重建向量索引」的后台任务同时在飞。
+#:
+#: 为什么要限：上游 `update_activity` 每写一次 content 就
+#: `asyncio.create_task(_trigger_course_embedding(...))`，而那个任务**自己新开一个
+#: db session**。导入 N 个页面就是 N 个 session 一起抢连接池，而池子是 5 + 10。
+#: 导一门几十页的课没事，导上千页必然打满，症状是后续请求全 500 ——
+#: 表现得像鉴权坏了，很难往「导入把池子占光了」上想。
+#: 压到 3 是留足余量给同时进来的正常请求。代价是导入变慢，但慢总比崩好。
+MAX_INFLIGHT_INDEX_TASKS = 3
+
+#: 万一上游把那个任务集合改名了，退回按页数节流：每这么多页歇一下。
+_FALLBACK_PAUSE_EVERY = 10
+_FALLBACK_PAUSE_SECONDS = 0.5
 
 
 class TransferError(ValueError):
@@ -483,6 +499,36 @@ def _find_asset(tree: dict, root: str, chapter_dir: str, src: str):
     return tree.get(joined)
 
 
+
+def _inflight_index_tasks():
+    """上游存放「在飞的索引重建任务」的集合。取不到就返回 None。
+
+    这是在读上游的模块级私有变量（`_embedding_tasks`）。之所以这么做而不是加
+    参数：上游 `update_activity` 没有留跳过索引的开关，而这个集合恰好是唯一
+    能观测到并发度的地方。上游哪天改名了，`getattr` 拿不到就退回按页数节流，
+    不会炸。
+    """
+    tasks = getattr(upstream_activities, "_embedding_tasks", None)
+    return tasks if isinstance(tasks, set) else None
+
+
+async def _throttle_index_tasks(pages_done: int) -> None:
+    """把在飞的索引任务数压到上限以下，压不住就等它们跑完几个。"""
+    tasks = _inflight_index_tasks()
+    if tasks is None:
+        # 观测不到并发度，退回最朴素的按页数歇一下
+        if pages_done and pages_done % _FALLBACK_PAUSE_EVERY == 0:
+            await asyncio.sleep(_FALLBACK_PAUSE_SECONDS)
+        return
+
+    # 快照一份再等：这个集合会被 done callback 改，直接拿它去 asyncio.wait
+    # 有可能在迭代期间被改动。
+    pending = {t for t in tasks if not t.done()}
+    while len(pending) > MAX_INFLIGHT_INDEX_TASKS:
+        _done, pending = await asyncio.wait(
+            pending, return_when=asyncio.FIRST_COMPLETED)
+
+
 async def import_course_markdown(
     request: Request,
     course_uuid: str,
@@ -508,6 +554,7 @@ async def import_course_markdown(
     root, chapters = plan_import(tree)
 
     created_chapters, created_activities, skipped = [], [], []
+    pages_done = 0
 
     for ch_dir, entries in chapters:
         ch_name = re.sub(r"^\d+-", "", ch_dir)
@@ -535,6 +582,10 @@ async def import_course_markdown(
                         "留着的话学生会看到一行字面的 HTML 注释。请到网页编辑器里手工补回"
                         % (len(lost), "、".join(sorted(set(lost)))))
                 created_activities.append(result)
+                pages_done += 1
+                # 每写完一页就把在飞的索引任务压回上限以下，别让它们攒起来
+                # 把连接池占光（上千页的课会打满 5+10 的池子）。
+                await _throttle_index_tasks(pages_done)
 
             elif kind == "embed":
                 m = re.search(r"\[\[EMBED:(\S+?)\]\]", body)

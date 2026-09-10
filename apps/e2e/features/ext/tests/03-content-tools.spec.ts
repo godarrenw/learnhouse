@@ -130,6 +130,9 @@ test.describe('内容工具 — 工具页', () => {
     const createdChapterIds: number[] = (summary.chapters_created ?? []).map(
       (c: any) => c.chapter_id
     )
+    const createdActivityUuids: string[] = (summary.activities_created ?? []).map(
+      (a: any) => a.activity_uuid
+    )
 
     try {
       const result = page.getByTestId('sysu-content-import-result')
@@ -142,7 +145,13 @@ test.describe('内容工具 — 工具页', () => {
       }
       await page.screenshot({ path: shot('05-import-result.png'), fullPage: true })
     } finally {
-      // 收尾：把这次导入建出来的章节全删掉，本地库回到原样
+      // 收尾：把这次导入建出来的东西全删掉，本地库回到原样。
+      // **活动要单独删**：删章节只会断开 chapteractivity 的关联，活动本身还挂在
+      // 课程上变成孤儿 —— 章节数看着回到原样了，活动数却在偷偷涨。
+      // 先删活动再删章节，顺序反了活动就找不着了。
+      for (const uuid of createdActivityUuids) {
+        await page.request.delete(`${API_URL}/activities/${uuid}`)
+      }
       for (const id of createdChapterIds) {
         await page.request.delete(`${API_URL}/chapters/${id}`)
       }
