@@ -13,6 +13,7 @@ import Modal from '@components/Objects/StyledElements/Modal/Modal'
 import { useTranslation } from 'react-i18next'
 /* --- SYSU-SAM --- */
 import { useCampusNetwork } from '@services/media/useCampusNetwork'
+import { useSignedMediaUrls } from '@services/media/useSignedMediaUrls'
 import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
 /* --- SYSU-SAM END --- */
 
@@ -85,17 +86,10 @@ function PDFBlockComponent(props: any) {
   const handleDownload = () => {
     if (!fileId) return;
 
-    const pdfUrl = getActivityBlockMediaDirectory(
-      org?.org_uuid,
-      course?.courseStructure.course_uuid,
-      blockObject.content.activity_uuid || props.extension.options.activity.activity_uuid,
-      blockObject.block_uuid,
-      fileId,
-      'pdfBlock'
-    );
-
+    /* --- SYSU-SAM: 下载走同一个签名地址，不要在这里重新拼一份未签名的 --- */
     const link = document.createElement('a');
     link.href = pdfUrl || '';
+    /* --- SYSU-SAM END --- */
     link.download = `document-${blockObject?.block_uuid || 'download'}.${blockObject?.content.file_format || 'pdf'}`;
     link.setAttribute('download', '');
     link.setAttribute('target', '_blank');
@@ -109,7 +103,7 @@ function PDFBlockComponent(props: any) {
     setIsModalOpen(true);
   };
 
-  const pdfUrl = blockObject ? getActivityBlockMediaDirectory(
+  const rawPdfUrl = blockObject ? getActivityBlockMediaDirectory(
     org?.org_uuid,
     course?.courseStructure.course_uuid,
     blockObject.content.activity_uuid || props.extension.options.activity.activity_uuid,
@@ -117,6 +111,13 @@ function PDFBlockComponent(props: any) {
     fileId || '',
     'pdfBlock'
   ) : null;
+
+  /* --- SYSU-SAM --- */
+  // 重媒体分流：PDF 块换成「媒体域名 + 限时签名」，未启用时原样返回。
+  // 下面所有用到 pdfUrl 的地方（iframe、展开弹窗）都自动跟着换。
+  const signedPdf = useSignedMediaUrls([rawPdfUrl])
+  const pdfUrl = rawPdfUrl ? signedPdf.get(rawPdfUrl) : null
+  /* --- SYSU-SAM END --- */
 
   useEffect(() => { }, [course, org])
 

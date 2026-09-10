@@ -2,6 +2,9 @@ import React from 'react'
 import YouTube from 'react-youtube'
 import { useOrg } from '@components/Contexts/OrgContext'
 import LearnHousePlayer from './LearnHousePlayer'
+/* --- SYSU-SAM --- */
+import { useSignedMediaUrls } from '@services/media/useSignedMediaUrls'
+/* --- SYSU-SAM END --- */
 import {
   isActivityHlsReady,
   resolveActivityVideoSource,
@@ -65,6 +68,21 @@ function VideoActivity({ activity, course, orgUuid }: VideoActivityProps) {
   // (optimized) progressive MP4 so playback always works.
   const hlsReady = isActivityHlsReady(activity)
 
+  /* --- SYSU-SAM --- */
+  // 重媒体分流：把托管视频的地址换成「媒体域名 + 限时签名」。
+  // 没配 NEXT_PUBLIC_LEARNHOUSE_HEAVY_MEDIA_URL 时 signed.get() 原样返回，
+  // 一个请求都不发，行为与上游一致。HLS 不在重媒体白名单里（见 signer.py），
+  // 所以只有 MP4 渐进流这一路会被换域。
+  const mp4ForSigning = resolveActivityVideoSource({
+    hlsReady: false,
+    orgUuid: resolvedOrgUuid,
+    courseUuid: course?.course_uuid,
+    activityUuid: activity.activity_uuid,
+    filename: activity.content?.filename,
+  }).src
+  const signed = useSignedMediaUrls([mp4ForSigning])
+  /* --- SYSU-SAM END --- */
+
   const getVideoSource = () =>
     resolveActivityVideoSource({
       hlsReady,
@@ -107,12 +125,19 @@ function VideoActivity({ activity, course, orgUuid }: VideoActivityProps) {
                     courseUuid: course?.course_uuid,
                     activityUuid: activity.activity_uuid,
                   })
+                  /* --- SYSU-SAM --- */
+                  // 未就绪时不挂载播放器：src 一变 key 就变、播放器会整个重建，
+                  // 与其先用主域名地址起播再换掉，不如等这一下（本地缓存命中时是同步的）。
+                  const signedSrc = isHls ? src : signed.get(src)
+                  const signedFallback = signed.get(fallbackSrc)
+                  if (!signed.ready) return null
+                  /* --- SYSU-SAM END --- */
                   return src ? (
                     <LearnHousePlayer
-                      key={src}
-                      src={src}
+                      key={signedSrc}
+                      src={signedSrc}
                       isHls={isHls}
-                      fallbackSrc={fallbackSrc}
+                      fallbackSrc={signedFallback || undefined}
                       details={activity.details}
                       thumbnails={thumbnails}
                       captions={captions}
