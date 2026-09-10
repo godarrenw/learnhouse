@@ -421,3 +421,18 @@ v1_router.include_router(
     tags=["stream"],
     dependencies=[Depends(get_non_api_token_user)]
 )
+
+# --- SYSU-SAM: 教学工具扩展路由（/api/v1/ext/**） ---
+# 所有部署方自建的教学工具都挂在这一个 router 下面，加新工具只需要在
+# src/routers/ext/__init__.py 的 SUBMODULES 里加一行，不用再改本文件。
+# 依赖用 require_authenticated_user：拒绝匿名、拒绝 API token（管理类路由的默认值）。
+# 教师身份（Admin/Maintainer/Instructor）由 src/routers/ext/deps.require_teacher 判断。
+from src.routers.ext import include_all as _sysu_sam_include_ext_routers  # noqa: E402
+
+v1_router.include_router(
+    _sysu_sam_include_ext_routers(),
+    prefix="/ext",
+    tags=["ext"],
+    dependencies=[Depends(require_authenticated_user)],
+)
+# --- /SYSU-SAM ---
