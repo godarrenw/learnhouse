@@ -429,6 +429,19 @@ bun run test features/ext
 却是前端登录失效**，很容易被误判成鉴权坏了。留痕的代价不是脏数据本身，是让别人
 花时间去查一个根本不存在的 bug。
 
+**收尾要按「先删活动、再删章节」的顺序，而且别只看章节数就以为干净了。**
+`DELETE /chapters/{id}` 只断开 `chapteractivity` 关联，**不删活动本身** ——
+活动还挂在课程上变成孤儿。内容工具第一版收尾只删章节，查章节数一直是 7 就
+以为清干净了，实际那门课的活动数从 21 悄悄涨到了 247。顺序也不能反：先删章节
+的话，活动就找不着了。
+
+自查用这条 SQL，孤儿数不该因为你的用例而增长：
+
+```sql
+select count(*) from activity a
+where not exists (select 1 from chapteractivity ca where ca.activity_id = a.id);
+```
+
 两个已经踩过的坑，骨架里已经修好，你直接用就行：
 
 - `E2E_STUDENT_EMAIL` / `E2E_STUDENT_PASSWORD` 是骨架新加的。本地复刻库的组织开了
