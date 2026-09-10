@@ -1,0 +1,11 @@
+import { chromium } from '@playwright/test'
+const b = await chromium.launch(); const c = await b.newContext(); const p = await c.newPage()
+await p.goto('http://localhost:3005/login',{waitUntil:'domcontentloaded'})
+await p.waitForTimeout(2000)
+await p.locator('input[type="email"], input[name="email"]').first().fill('user1@example.local')
+await p.locator('input[type="password"]').first().fill('LocalDev#2026')
+await p.locator('button[type="submit"]').first().click()
+await p.waitForURL(u=>!u.pathname.includes('/login'),{timeout:90000})
+console.log('ok', p.url())
+await c.storageState({path:'/private/tmp/claude-501/-Volumes-D-code/748617f2-89b2-480a-a7d9-3f9a18f4b748/scratchpad/state.json'})
+await b.close()

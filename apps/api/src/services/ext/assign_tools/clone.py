@@ -139,7 +139,7 @@ async def clone_term(
         "shift_days": shift_days,
         "due_date": due_date,
         "unpublish": bool(unpublish),
-        "note": "克隆会复制章节、内容页、文件与作业题目，但**不会**复制学生的提交与成绩。",
+        "note": "克隆会复制章节、内容页、文件与作业题目，但不会复制学生的提交与成绩。",
     }
     if not confirm:
         return summary
