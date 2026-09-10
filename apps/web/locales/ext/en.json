@@ -17,6 +17,10 @@
     "example": {
       "description": "Check that the teaching tools extension is wired up",
       "keywords": "example,health,self check"
+    },
+    "learning": {
+      "description": "Gradebook, missing submissions, progress and course health check",
+      "keywords": "grade,gradebook,missing,progress,health,lint,learning"
     }
   },
   "common": {
@@ -59,6 +63,64 @@
       "role": "Role in organization",
       "tools": "Mounted tools",
       "role_unknown": "Superadmin (not a member of this organization)"
+    },
+    "learning": {
+      "title": "Learning",
+      "description": "Gradebook, missing submissions, learner progress and a course health check in one page.",
+      "tabs": {
+        "gradebook": "Gradebook",
+        "missing": "Missing",
+        "progress": "Progress",
+        "lint": "Health check"
+      },
+      "table": {
+        "student": "Student",
+        "usergroup": "User group",
+        "submitted": "Submitted",
+        "total": "Total",
+        "average": "Average %",
+        "due_date": "Due date",
+        "status": "Status"
+      },
+      "csv": {
+        "user_id": "User id",
+        "email": "Email"
+      },
+      "gradebook": {
+        "empty": "No students and no submissions yet",
+        "show_percent": "Show percentages",
+        "show_raw": "Show raw scores"
+      },
+      "missing": {
+        "assignment": "Assignment",
+        "all": "All assignments",
+        "none": "Nobody is missing a submission",
+        "none_for_assignment": "Everyone submitted this assignment"
+      },
+      "progress": {
+        "percentage": "Completion",
+        "completed": "Completed",
+        "last_active": "Last active",
+        "started_at": "Started",
+        "total_activities": "Activities in course",
+        "detail": "Details",
+        "detail_desc": "Which activities this student has completed",
+        "empty": "No learning records for this course yet",
+        "no_steps": "This student has not opened any activity yet"
+      },
+      "lint": {
+        "clean": "No issues found in this course",
+        "level_error": "Error",
+        "level_warn": "Warning",
+        "level_info": "Info",
+        "publish_action": "Publish unpublished activities ({{count}})",
+        "publish_title": "Publish unpublished activities?",
+        "publish_confirm": "Unpublished activities without error-level issues will be published to students immediately. Assignment shells are skipped.",
+        "publish_button": "Publish",
+        "publishing": "Publishing…",
+        "publish_done": "Published {{published}} activities, skipped {{skipped}}",
+        "publish_error": "Publishing failed"
+      }
     }
   }
 }

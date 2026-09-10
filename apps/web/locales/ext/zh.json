@@ -17,6 +17,10 @@
     "example": {
       "description": "验证教学工具扩展点是否连通",
       "keywords": "示例,自检,health,example"
+    },
+    "learning": {
+      "description": "成绩册、缺交名单、学习进度、课程体检",
+      "keywords": "成绩,成绩册,缺交,没交,进度,体检,学情,gradebook,progress"
     }
   },
   "common": {
@@ -59,6 +63,64 @@
       "role": "组织内角色",
       "tools": "已挂载的工具",
       "role_unknown": "超级管理员（不属于本组织）"
+    },
+    "learning": {
+      "title": "学情",
+      "description": "成绩册、缺交名单、学习进度与课程体检，四件事一个页面看完。",
+      "tabs": {
+        "gradebook": "成绩册",
+        "missing": "缺交",
+        "progress": "学习进度",
+        "lint": "课程体检"
+      },
+      "table": {
+        "student": "学生",
+        "usergroup": "用户组",
+        "submitted": "已交",
+        "total": "总分",
+        "average": "平均百分比",
+        "due_date": "截止日期",
+        "status": "状态"
+      },
+      "csv": {
+        "user_id": "用户 id",
+        "email": "邮箱"
+      },
+      "gradebook": {
+        "empty": "这门课还没有学生，也没有任何提交",
+        "show_percent": "显示百分比",
+        "show_raw": "显示原始分"
+      },
+      "missing": {
+        "assignment": "作业",
+        "all": "全部作业",
+        "none": "没有人缺交",
+        "none_for_assignment": "这份作业所有人都交了"
+      },
+      "progress": {
+        "percentage": "完成度",
+        "completed": "已完成",
+        "last_active": "最近学习",
+        "started_at": "开始时间",
+        "total_activities": "课程活动总数",
+        "detail": "明细",
+        "detail_desc": "这名学生在本课程里完成了哪些活动",
+        "empty": "这门课还没有学习记录",
+        "no_steps": "这名学生还没打开过任何活动"
+      },
+      "lint": {
+        "clean": "这门课没查出问题",
+        "level_error": "严重",
+        "level_warn": "提醒",
+        "level_info": "信息",
+        "publish_action": "一键发布未发布活动（{{count}}）",
+        "publish_title": "一键发布未发布活动？",
+        "publish_confirm": "会把没有 error 级问题的未发布活动直接发布给学生，作业壳不会被发布。发布后学生立刻能看到。",
+        "publish_button": "确认发布",
+        "publishing": "正在发布…",
+        "publish_done": "已发布 {{published}} 个活动，跳过 {{skipped}} 个",
+        "publish_error": "发布失败"
+      }
     }
   }
 }

@@ -120,6 +120,15 @@ export const queryKeys = {
   ext: {
     health: (orgId: number) => ['ext', 'health', orgId] as const,
     courses: (orgSlug: string) => ['ext', 'courses', orgSlug] as const,
+    learning: {
+      gradebook: (courseUuid: string) => ['ext', 'learning', 'gradebook', courseUuid] as const,
+      missing: (courseUuid: string, assignmentUuid: string | null) =>
+        ['ext', 'learning', 'missing', courseUuid, assignmentUuid ?? 'all'] as const,
+      progress: (courseUuid: string) => ['ext', 'learning', 'progress', courseUuid] as const,
+      student: (courseUuid: string, student: string) =>
+        ['ext', 'learning', 'progress', courseUuid, student] as const,
+      lint: (courseUuid: string) => ['ext', 'learning', 'lint', courseUuid] as const,
+    },
   },
   /* --- /SYSU-SAM --- */
 }

@@ -2,8 +2,15 @@
 """学情工具接口：成绩册、缺交名单、学习进度、课程体检。
 
 路由层很薄：只做 HTTP 签名、权限入口和 CSV 包装，业务逻辑全在
-`src/services/ext/learning/` 里。所有接口都要求教师身份（require_teacher），
-再按课程级权限（对该课程有 read）收窄。
+`src/services/ext/learning/` 里。
+
+三层权限，缺一不可：
+1. `router.py` 挂载时的 `require_authenticated_user`（拒匿名、拒 API token）
+2. `deps.require_teacher`：调用者在 `?org_id=` 那个组织里是 Admin / Maintainer / Instructor
+3. `rbac_check_course`：调用者对这门具体课程有 read（写操作要 update）权限
+
+另外每个带 course_uuid 的接口都会核对课程确实属于 `org_id` 那个组织，
+防止拿 A 组织的教师身份去读 B 组织的课。
 """
 
 from typing import Optional
@@ -14,8 +21,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
 from src.db.users import PublicUser
-from src.routers.ext import require_teacher
-from src.security.org_auth import require_org_role_permission
+from src.routers.ext.deps import require_teacher
 from src.services.ext.learning.common import rbac_check_course, resolve_course
 from src.services.ext.learning.gradebook import (
     build_gradebook,
@@ -63,11 +69,12 @@ async def api_gradebook(
     *,
     request: Request,
     course_uuid: str,
+    org_id: int = Query(..., description="组织 id"),
     format: Optional[str] = Query(None, pattern="^(json|csv)$"),
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    course = await resolve_course(db_session, course_uuid)
+    course = await resolve_course(db_session, course_uuid, org_id)
     await rbac_check_course(request, course_uuid, current_user, "read", db_session)
     data = await build_gradebook(db_session, course)
     if format == "csv":
@@ -95,12 +102,13 @@ async def api_missing(
     *,
     request: Request,
     course_uuid: str,
+    org_id: int = Query(..., description="组织 id"),
     assignment_uuid: Optional[str] = None,
     format: Optional[str] = Query(None, pattern="^(json|csv)$"),
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    course = await resolve_course(db_session, course_uuid)
+    course = await resolve_course(db_session, course_uuid, org_id)
     await rbac_check_course(request, course_uuid, current_user, "read", db_session)
     data = await build_missing(db_session, course, assignment_uuid)
     if format == "csv":
@@ -129,12 +137,13 @@ async def api_progress(
     *,
     request: Request,
     course_uuid: str,
+    org_id: int = Query(..., description="组织 id"),
     student: Optional[str] = None,
     format: Optional[str] = Query(None, pattern="^(json|csv)$"),
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    course = await resolve_course(db_session, course_uuid)
+    course = await resolve_course(db_session, course_uuid, org_id)
     await rbac_check_course(request, course_uuid, current_user, "read", db_session)
     if student:
         return await build_student_progress(db_session, course, student)
@@ -160,17 +169,13 @@ async def api_progress(
 )
 async def api_recent(
     *,
-    request: Request,
     org_id: int = Query(..., description="组织 id"),
     days: int = Query(7, ge=1, le=365),
     limit: int = Query(200, ge=1, le=1000),
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    # 组织级权限：必须是这个组织里能读课程的角色，防止跨组织读别人的学习记录
-    await require_org_role_permission(
-        current_user.id, org_id, db_session, "courses", "action_read"
-    )
+    # 组织级鉴权已经由 require_teacher 做掉，这里直接查
     return await build_recent(db_session, org_id, days=days, limit=limit)
 
 
@@ -193,10 +198,11 @@ async def api_lint(
     *,
     request: Request,
     course_uuid: str,
+    org_id: int = Query(..., description="组织 id"),
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    course = await resolve_course(db_session, course_uuid)
+    course = await resolve_course(db_session, course_uuid, org_id)
     await rbac_check_course(request, course_uuid, current_user, "read", db_session)
     return await lint_course(db_session, course)
 
@@ -222,11 +228,12 @@ async def api_lint_fix_publish(
     *,
     request: Request,
     course_uuid: str,
+    org_id: int = Query(..., description="组织 id"),
     body: dict = Body(default_factory=dict),
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser = Depends(require_teacher),
 ):
-    course = await resolve_course(db_session, course_uuid)
+    course = await resolve_course(db_session, course_uuid, org_id)
     # 写操作要求 update 权限，比读接口更严
     await rbac_check_course(request, course_uuid, current_user, "update", db_session)
     return await fix_publish(db_session, course, body.get("confirm") is True)

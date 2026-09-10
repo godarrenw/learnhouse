@@ -35,7 +35,7 @@ from src.db.usergroup_resources import UserGroupResource
 from src.db.usergroup_user import UserGroupUser
 from src.db.usergroups import UserGroup
 from src.db.users import User
-from src.routers.ext import require_teacher
+from src.routers.ext.deps import require_teacher
 from src.routers.ext.learning import router as learning_router
 from src.services.ext.learning.common import to_iso
 from src.services.ext.learning.gradebook import (
@@ -618,7 +618,7 @@ async def test_route_gradebook_json(
     client, allow_course, course, usergroup, assignment, submission
 ):
     response = await client.get(
-        "/api/v1/ext/learning/courses/%s/gradebook" % course.course_uuid
+        "/api/v1/ext/learning/courses/%s/gradebook?org_id=1" % course.course_uuid
     )
     assert response.status_code == 200
     assert response.json()["student_count"] == 2
@@ -628,7 +628,7 @@ async def test_route_gradebook_csv(
     client, allow_course, course, usergroup, assignment, submission
 ):
     response = await client.get(
-        "/api/v1/ext/learning/courses/%s/gradebook?format=csv" % course.course_uuid
+        "/api/v1/ext/learning/courses/%s/gradebook?org_id=1&format=csv" % course.course_uuid
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
@@ -636,21 +636,38 @@ async def test_route_gradebook_csv(
 
 
 async def test_route_unknown_course_404(client, allow_course):
-    response = await client.get("/api/v1/ext/learning/courses/nope/gradebook")
+    response = await client.get("/api/v1/ext/learning/courses/nope/gradebook?org_id=1")
     assert response.status_code == 404
 
 
 async def test_route_lint_fix_publish_needs_confirm(client, allow_course, course, activity):
     response = await client.post(
-        "/api/v1/ext/learning/courses/%s/lint/fix-publish" % course.course_uuid,
+        "/api/v1/ext/learning/courses/%s/lint/fix-publish?org_id=1" % course.course_uuid,
         json={},
     )
     assert response.status_code == 400
 
 
+async def test_route_rejects_cross_org_course(client, allow_course, other_org, course):
+    """拿别的组织的 org_id 来读这门课，按「找不到」处理。"""
+    response = await client.get(
+        "/api/v1/ext/learning/courses/%s/gradebook?org_id=%d"
+        % (course.course_uuid, other_org.id)
+    )
+    assert response.status_code == 404
+
+
+async def test_route_requires_org_id(client, allow_course, course):
+    """require_teacher 把 org_id 声明成必填 query 参数，漏了要 422。"""
+    response = await client.get(
+        "/api/v1/ext/learning/courses/%s/gradebook" % course.course_uuid
+    )
+    assert response.status_code == 422
+
+
 async def test_route_denies_user_without_course_rights(client, deny_course, course, usergroup):
     """课程级权限不通过时，成绩册必须 403。"""
     response = await client.get(
-        "/api/v1/ext/learning/courses/%s/gradebook" % course.course_uuid
+        "/api/v1/ext/learning/courses/%s/gradebook?org_id=1" % course.course_uuid
     )
     assert response.status_code == 403

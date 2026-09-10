@@ -102,13 +102,21 @@ def due_cutoff(raw: str | None) -> datetime | None:
 # ---------------------------------------------------------------- 课程与权限
 
 
-async def resolve_course(db_session: AsyncSession, course_uuid: str) -> Course:
-    """按 course_uuid 取课程，取不到就 404。"""
+async def resolve_course(
+    db_session: AsyncSession, course_uuid: str, org_id: int | None = None
+) -> Course:
+    """按 course_uuid 取课程，取不到就 404。
+
+    传了 org_id 就同时核对课程归属：拿 A 组织的教师身份去读 B 组织的课，
+    统一按「找不到」处理（返回 403 会泄露这门课存在）。
+    """
     result = await db_session.execute(
         select(Course).where(Course.course_uuid == course_uuid)
     )
     course = result.scalars().first()
     if not course:
+        raise LearningError("找不到这门课程", status.HTTP_404_NOT_FOUND)
+    if org_id is not None and course.org_id != org_id:
         raise LearningError("找不到这门课程", status.HTTP_404_NOT_FOUND)
     return course
 
