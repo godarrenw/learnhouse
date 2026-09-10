@@ -3,6 +3,28 @@
 这里是先进智造学堂线上环境（群晖 NAS 172.25.5.162）的部署配置，纳入版本管理是为了
 「NAS 上跑的到底是什么」有据可查、可复原。**本目录不会自动同步到 NAS**，改完要人工上传。
 
+## 三个环境的关系
+
+| | 在哪 | 是什么 |
+|---|---|---|
+| **本仓库** | `/Volumes/D/code/learnhouse`，分支 `sysu-sam` | **唯一真相源**。源码 + 本目录的部署配置 |
+| **本地预发** | `/Volumes/D/code/learnhouse-local` | 生产的本地复刻，端口 18088，数据从生产备份恢复并脱敏 |
+| **生产** | NAS `172.25.5.162:/volume1/docker/learnhouse`，端口 8088 | 真实课程与学生 |
+
+改动的流向是 **仓库 → 本地预发验证 → 生产**，不能跳过中间那步，也不要反向：
+生产目录不再手工编辑，NAS 上的文件由 `deploy.sh` 从仓库同步过去。
+
+本地预发环境（`learnhouse-local`）**不是本仓库的一部分**，它是一个独立的工作目录，
+有自己的 `.env`、数据卷、`make up / restore / smoke` 一套脚手架和脱敏脚本，
+这些都与生产部署无关，所以没有并进来。并进本目录的只有它写的两份部署产物：
+`DEPLOY.md` 和 `deploy.sh`。
+
+两边的 compose 有意保持不同：本地那份是复刻生产用的（项目名 `learnhouse-local`、
+端口 18088、网段 172.21、`platform: linux/arm64`），本目录这份是生产用的。
+**不要互相覆盖。**
+
+升级或改动的完整闭环见 `../docs/sysu-sam/DEVELOPING.md` 的「跟上游升级」一节。
+
 ## 与 NAS 目录的对应关系
 
 NAS 上的部署根目录是 `/volume1/docker/learnhouse`，compose 项目名 `learnhouse-nas`，
@@ -13,6 +35,8 @@ NAS 上的部署根目录是 `/volume1/docker/learnhouse`，compose 项目名 `l
 | `deploy/docker-compose.yml` | `/volume1/docker/learnhouse/docker-compose.yml` | 5 个服务：app / nginx / ssr-fwd / db / redis |
 | `deploy/extra/nginx.prod.conf` | `/volume1/docker/learnhouse/extra/nginx.prod.conf` | 外层 nginx，挂进 nginx 容器的 `conf.d/default.conf` |
 | `deploy/backup.sh` | `/volume1/docker/learnhouse/backup.sh` | 由 `/etc/crontab` 每日 02:00 触发 |
+| `deploy/deploy.sh` | 不上传，在本机跑 | 部署脚本（**骨架，未在生产跑过**），流程见 `DEPLOY.md` |
+| `deploy/DEPLOY.md` | 不上传 | 部署流程说明 |
 | `deploy/.env.example` | `/volume1/docker/learnhouse/.env` | **只有键名和非敏感值**，真实密钥永不进仓库 |
 | 无（不进仓库） | `/volume1/docker/learnhouse/data/content` | 课程图片/视频，体积大，靠 DSM 快照或 Hyper Backup |
 | 无（不再需要） | `/volume1/docker/learnhouse/patches/` | 见下面「patches 目录的去向」 |
