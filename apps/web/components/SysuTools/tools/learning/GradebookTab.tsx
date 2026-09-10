@@ -7,12 +7,12 @@ import { Table2 } from 'lucide-react'
 
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { useOrg } from '@components/Contexts/OrgContext'
+import DataTable, { DataTableColumn } from '@components/SysuTools/shared/DataTable'
 import ExportCsvButton, { CsvColumn } from '@components/SysuTools/shared/ExportCsvButton'
 import { queryKeys } from '@/lib/query/keys'
 import { cn } from '@/lib/utils'
 import { getGradebook, GradebookStudent } from '@services/ext/learning'
 
-import SortableTable, { SortableColumn } from './SortableTable'
 import {
   NeedCourse,
   PersonCell,
@@ -69,11 +69,20 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
     })
   }, [students, sort.key, sort.direction])
 
-  const columns: SortableColumn<GradebookStudent>[] = React.useMemo(() => {
-    const list: SortableColumn<GradebookStudent>[] = [
+  // 排序列的公共写法：把当前方向交给 DataTable，图标由它自己画
+  const sortable = React.useCallback(
+    (key: SortKey) => ({
+      onHeaderClick: () => sort.toggle(key),
+      sortDirection: sort.key === key ? sort.direction : null,
+    }),
+    [sort]
+  )
+
+  const columns: DataTableColumn<GradebookStudent>[] = React.useMemo(() => {
+    const list: DataTableColumn<GradebookStudent>[] = [
       {
         key: 'student',
-        sortKey: 'name',
+        ...sortable('name'),
         header: t('ext.tools.learning.table.student'),
         cell: (row) => <PersonCell name={row.name} email={row.email} />,
       },
@@ -86,7 +95,7 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
     assignments.forEach((assignment, index) => {
       list.push({
         key: assignment.assignment_uuid,
-        sortKey: `cell:${index}`,
+        ...sortable(`cell:${index}`),
         align: 'end',
         header: assignment.title,
         cell: (row) => {
@@ -111,7 +120,7 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
     list.push(
       {
         key: 'submitted',
-        sortKey: 'submitted',
+        ...sortable('submitted'),
         align: 'end',
         header: t('ext.tools.learning.table.submitted'),
         cell: (row) => (
@@ -122,7 +131,7 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
       },
       {
         key: 'total',
-        sortKey: 'total',
+        ...sortable('total'),
         align: 'end',
         header: t('ext.tools.learning.table.total'),
         cell: (row) => (
@@ -131,7 +140,7 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
       },
       {
         key: 'average',
-        sortKey: 'average',
+        ...sortable('average'),
         align: 'end',
         header: t('ext.tools.learning.table.average'),
         cell: (row) =>
@@ -141,7 +150,7 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
       }
     )
     return list
-  }, [assignments, showPercent, t])
+  }, [assignments, showPercent, sortable, t])
 
   const csvColumns: CsvColumn<GradebookStudent>[] = React.useMemo(() => {
     const list: CsvColumn<GradebookStudent>[] = [
@@ -199,19 +208,17 @@ export default function GradebookTab({ courseUuid }: { courseUuid?: string }) {
       />
       <ToolNote text={data?.note} />
       <ToolBody>
-        <SortableTable
-          testId="learning-gradebook-table"
-          columns={columns}
-          rows={rows}
-          rowKey={(row) => String(row.user_id)}
-          sortKey={sort.key}
-          sortDirection={sort.direction}
-          onSort={sort.toggle}
-          isInitialLoading={!data && isFetching}
-          isRefreshing={!!data && isFetching}
-          emptyIcon={Table2}
-          emptyMessage={t('ext.tools.learning.gradebook.empty')}
-        />
+        <div data-testid="learning-gradebook-table">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => String(row.user_id)}
+            isInitialLoading={!data && isFetching}
+            isRefreshing={!!data && isFetching}
+            emptyIcon={Table2}
+            emptyMessage={t('ext.tools.learning.gradebook.empty')}
+          />
+        </div>
       </ToolBody>
     </>
   )

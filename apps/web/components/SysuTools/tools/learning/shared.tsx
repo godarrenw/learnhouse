@@ -1,5 +1,5 @@
 'use client'
-/** 学情工具四个 Tab 共用的小件。表格本体一律用 shared/DataTable。 */
+/** 学情工具四个 Tab 共用的小件。表格本体一律用 shared/DataTable（它自带排序表头与三态）。 */
 import React from 'react'
 
 /** 排序状态：点同一列翻转方向，点别的列换列并回到升序。 */

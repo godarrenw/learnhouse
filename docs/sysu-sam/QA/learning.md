@@ -58,10 +58,10 @@ skill 里那一整套 sshpass / pexpect / NAS 密码全部没有了。
 
 ```
 $ uv run pytest src/tests/ext -q
-38 passed
+48 passed
 ```
 
-（38 条里包含骨架代理的 `test_health.py`。）
+（48 条里包含骨架代理的 `test_health.py`，学情自己 24 条。）
 
 覆盖到的点：矩阵取值与状态、没绑用户组时的 note、CSV 带 BOM、迟交判定、进度分母含未发布活动、
 单人明细、学生不存在 404、最近事件按组织隔离、时区转换、中文姓名不加空格、
@@ -148,11 +148,10 @@ apps/web  bun run dev --port 3003
    （`components/Utils/ClientComp.tsx`、`Dashboard/Analytics/**`、`Boards/Extensions/**` 等），
    与本功能无关，本分支一个字都没改这些文件。学情自己的文件在 `bun run lint` 下零 error、零 warning，
    `bunx tsc --noEmit` 对本功能的文件零报错。
-2. **可排序表格没有用共享的 `DataTable`**。`DataTableColumn.header` 是 `string`，塞不进
-   UI_GUIDE 3.4 要求的 ArrowUp / ArrowDown 图标，也没有表头点击回调，所以成绩册与学习进度用了
-   同目录下的 `SortableTable.tsx`（样式与 `DataTable` 逐字一致，只多了排序）。已经请骨架代理把
-   `header` 放宽成 `React.ReactNode`；放宽之后这个文件可以删掉，改回直接用 `DataTable`。
-   缺交页用的就是共享 `DataTable`。
+2. **四个 Tab 的表格全部用共享的 `DataTable`**。最初它的 `header` 是 `string`、也没有表头
+   点击回调，塞不进 UI_GUIDE 3.4 要求的方向图标，所以曾经自带过一个 `SortableTable.tsx`；
+   骨架代理已经把 `header` 放宽成 `React.ReactNode` 并加了 `onHeaderClick` / `sortDirection`
+   （commit 33537025），rebase 后那个本地副本已删除，成绩册与学习进度改用共享组件。
 3. **四个子 Tab 用组件内 state 切换，不改 URL**。`/dash/tools/[tool]` 的动态段已经被工具 key 占了，
    工具内部再占一段会和它打架。代价是命令面板只能搜到工具本身，搜不到单个 Tab；
    刷新页面会回到第一个 Tab。
@@ -163,10 +162,9 @@ apps/web  bun run dev --port 3003
 5. **`/ext/learning/recent` 还没有前端入口**。它是组织级的（不属于任何一门课），
    而学情工具是 `courseScoped: true`，页内没有合适的位置放它。接口本身可用、有 pytest 覆盖，
    后续可以做成教学工具概览页上的一块「最近动态」。
-6. **本提交里的骨架文件是从 `feat/skeleton` 工作区复制来的**（`routers/ext/{__init__,deps,health}.py`、
-   `SysuTools/{types,registry,shared}`、`dash/tools` 路由、`locales/ext`、`lib` 的四处改动），
-   只为本地跑通端到端，内容与骨架分支完全一致。骨架合入 `sysu-sam` 后 rebase 时一律取骨架的版本，
-   只保留学情自己的那几行注册。
-7. **给骨架代理提了一个 `DataTable` 类型放宽的请求**，见第 2 条；另外确认了
-   `/dash/tools/**` 在单组织模式下的路径是 `/dash/tools/<key>`（不是 `/orgs/<slug>/dash/...`），
-   端到端用例里用 `LH_E2E_ORG_SLUG` 兼容两种模式。
+6. **已经 rebase 到含骨架的 `sysu-sam`（33537025）**，冲突全部取骨架版本，只把学情自己的注册
+   重新贴回六处共享文件：`routers/ext/__init__.py` 的 `SUBMODULES`、`SysuTools/registry.ts`、
+   `lib/query/keys.ts`、`dash/tools/page.search.ts`、`locales/ext/{zh,en}.json`。
+   rebase 后 pytest / ruff / bun test / tsc / lint / playwright 全部重跑通过。
+7. **`/dash/tools/**` 在单组织模式下的路径是 `/dash/tools/<key>`**，不是
+   `/orgs/<slug>/dash/tools/<key>`。端到端用例用 `LH_E2E_ORG_SLUG` 兼容两种部署模式。

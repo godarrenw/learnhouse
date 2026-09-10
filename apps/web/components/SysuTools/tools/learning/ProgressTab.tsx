@@ -9,11 +9,11 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { useOrg } from '@components/Contexts/OrgContext'
 import LearnHouseSpinner from '@components/Objects/Loaders/LearnHouseSpinner'
 import Modal from '@components/Objects/StyledElements/Modal/Modal'
+import DataTable, { DataTableColumn } from '@components/SysuTools/shared/DataTable'
 import ExportCsvButton, { CsvColumn } from '@components/SysuTools/shared/ExportCsvButton'
 import { queryKeys } from '@/lib/query/keys'
 import { getProgress, getStudentProgress } from '@services/ext/learning'
 
-import SortableTable, { SortableColumn } from './SortableTable'
 import {
   NeedCourse,
   PersonCell,
@@ -145,10 +145,15 @@ export default function ProgressTab({ courseUuid }: { courseUuid?: string }) {
     })
   }, [students, sort.key, sort.direction])
 
-  const columns: SortableColumn<any>[] = [
+  const sortable = (key: SortKey) => ({
+    onHeaderClick: () => sort.toggle(key),
+    sortDirection: sort.key === key ? sort.direction : null,
+  })
+
+  const columns: DataTableColumn<any>[] = [
     {
       key: 'student',
-      sortKey: 'name',
+      ...sortable('name'),
       header: t('ext.tools.learning.table.student'),
       cell: (row) => <PersonCell name={row.name} email={row.email} />,
     },
@@ -159,7 +164,7 @@ export default function ProgressTab({ courseUuid }: { courseUuid?: string }) {
     },
     {
       key: 'percentage',
-      sortKey: 'percentage',
+      ...sortable('percentage'),
       align: 'end',
       header: t('ext.tools.learning.progress.percentage'),
       cell: (row) => (
@@ -175,7 +180,7 @@ export default function ProgressTab({ courseUuid }: { courseUuid?: string }) {
     },
     {
       key: 'last_active',
-      sortKey: 'last_active',
+      ...sortable('last_active'),
       align: 'end',
       header: t('ext.tools.learning.progress.last_active'),
       cell: (row) => (
@@ -239,19 +244,17 @@ export default function ProgressTab({ courseUuid }: { courseUuid?: string }) {
       />
       <ToolNote text={data?.denominator_note} />
       <ToolBody>
-        <SortableTable
-          testId="learning-progress-table"
-          columns={columns}
-          rows={rows}
-          rowKey={(row) => String(row.user_id)}
-          sortKey={sort.key}
-          sortDirection={sort.direction}
-          onSort={sort.toggle}
-          isInitialLoading={!data && isFetching}
-          isRefreshing={!!data && isFetching}
-          emptyIcon={TrendingUp}
-          emptyMessage={data?.note || t('ext.tools.learning.progress.empty')}
-        />
+        <div data-testid="learning-progress-table">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => String(row.user_id)}
+            isInitialLoading={!data && isFetching}
+            isRefreshing={!!data && isFetching}
+            emptyIcon={TrendingUp}
+            emptyMessage={data?.note || t('ext.tools.learning.progress.empty')}
+          />
+        </div>
       </ToolBody>
       <Modal
         isDialogOpen={!!openStudent}
