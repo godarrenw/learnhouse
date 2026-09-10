@@ -25,6 +25,36 @@ TARGET=local ./deploy.sh    # 部署到本机演练栈，用于验证脚本本�
 演练模式另有两个开关，**都只在 `TARGET=local` 下生效**：
 `ALLOW_DIRTY=1` 放行脏工作区，`DRY_IMAGE=<tag>` 把 app 镜像换成别的以注入故障。
 
+## 第一次真部署的清单
+
+按顺序做，前两步是手工的，**不能靠 `deploy.sh` 代劳**。
+
+1. **先手工把新版 `backup.sh` 传上 NAS。**
+   `deploy.sh` 第 2 步调的是 **NAS 上那份** `backup.sh`（`sh ${DEPLOY_DIR}/backup.sh`），
+   而 `sync_files` 只同步 `extra/` 和 `docker-compose.yml`，**不包含 `backup.sh`**。
+   NAS 上现在还是旧版：config 归档那行写死了 `patches`，一旦 `patches/` 不在就
+   `tar` 非零退出、`set -e` 静默中止，`deploy.sh` 只会报「备份失败」且拿不到原因
+   （2026-09-10 演练就栽在这里，见 `REHEARSAL.md`）。
+   **不先换掉它，第一次部署必定卡在备份这一步。**
+
+   ```sh
+   tar -cf - backup.sh | ssh … 'tar -C /volume1/docker/learnhouse -xf -'
+   ssh … 'sh /volume1/docker/learnhouse/backup.sh'    # 单独跑一次，确认出三份归档且退出码 0
+   ```
+
+   新版只打包实际存在的项，`patches/` 在不在都能正常跑完。
+
+2. **确认 `.env` 齐全。** 对着 `.env.example` 核一遍键名，尤其是本分支新引入的
+   AI 生图相关项（生图已改走 `LEARNHOUSE_AI_API_KEY` / `LEARNHOUSE_AI_BASE_URL`，
+   不再需要 Gemini key）。`.env` 不由脚本同步。
+
+3. **NAS 上的 `patches/` 不要删。** 它是回滚保险，见下面「失败回滚」一节。
+
+4. 跑 `TARGET=prod ./deploy.sh`，全程盯着，重点看 `REHEARSAL.md` 末尾
+   「还没验到的」那六项 —— 尤其是 `docker-compose pull` 的耗时，
+   以及健康检查 240s 在这台 4G 内存且在用 swap 的 NAS 上够不够
+   （生产 `start_period` 是 180s，冷启要跑迁移）。
+
 ## 基本约定
 
 1. **改动全部在 git 仓库里。** 生产目录 `/volume1/docker/learnhouse/` 不再手工编辑。
