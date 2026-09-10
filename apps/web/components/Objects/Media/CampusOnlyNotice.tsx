@@ -11,42 +11,41 @@ import { useTranslation } from 'react-i18next'
  * 不如直接说清楚。
  *
  * variant='dark' 给视频用（播放器底色是黑的），'light' 给 PDF 用。
+ *
+ * 文案在 locales/ext/{zh,en}.json 的 campus_media 段。ext 命名空间的加载器
+ * 由骨架代理提供，尚未合入时 t() 会回落到这里的 defaultValue，显示中文。
  */
 export default function CampusOnlyNotice({
-    variant = 'light',
-    className = '',
+  variant = 'light',
+  className = '',
 }: {
-    variant?: 'dark' | 'light'
-    className?: string
+  variant?: 'dark' | 'light'
+  className?: string
 }) {
-    const { t } = useTranslation()
-    const isDark = variant === 'dark'
+  const { t } = useTranslation()
+  const isDark = variant === 'dark'
 
-    return (
-        <div
-            className={`flex h-full w-full flex-col items-center justify-center gap-2 px-6 py-10 text-center ${
-                isDark ? 'bg-zinc-900 text-zinc-100' : 'bg-zinc-50 text-zinc-700'
-            } ${className}`}
-        >
-            <WifiOff
-                size={28}
-                className={isDark ? 'text-zinc-400' : 'text-zinc-400'}
-                aria-hidden="true"
-            />
-            <p className="text-sm font-medium">
-                {t('sysu_campus_media.title', '本内容仅限校园网访问')}
-            </p>
-            <p
-                className={`max-w-sm text-xs leading-relaxed ${
-                    isDark ? 'text-zinc-400' : 'text-zinc-500'
-                }`}
-            >
-                {t(
-                    'sysu_campus_media.description',
-                    '请连接校园网或校园 VPN 后刷新页面。页面上的其它内容不受影响。如果浏览器询问是否允许访问本地网络，请选择「允许」。'
-                )}
-            </p>
-        </div>
-    )
+  return (
+    <div
+      className={`flex h-full w-full flex-col items-center justify-center gap-2 px-6 py-10 text-center ${
+        isDark ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-700'
+      } ${className}`}
+    >
+      <WifiOff size={28} className="text-gray-400" aria-hidden="true" />
+      <p className="text-sm font-medium">
+        {t('ext.campus_media.title', { defaultValue: '本内容仅限校园网访问' })}
+      </p>
+      <p
+        className={`max-w-sm text-xs leading-relaxed ${
+          isDark ? 'text-gray-400' : 'text-gray-500'
+        }`}
+      >
+        {t('ext.campus_media.description', {
+          defaultValue:
+            '请连接校园网或校园 VPN 后刷新页面。页面上的其它内容不受影响。',
+        })}
+      </p>
+    </div>
+  )
 }
-/* --- SYSU-SAM --- */
+/* --- SYSU-SAM END --- */

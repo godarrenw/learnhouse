@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 /* --- SYSU-SAM --- */
 import { useCampusNetwork } from '@services/media/useCampusNetwork'
 import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
-/* --- SYSU-SAM --- */
+/* --- SYSU-SAM END --- */
 
 const SUPPORTED_FILES = constructAcceptValue(['pdf'])
 
@@ -44,7 +44,7 @@ function PDFBlockComponent(props: any) {
   // 而跨域 iframe 加载失败不触发事件，所以主动探一次。
   // 只影响阅读态：编辑态（教师）在校内，仍然按原样渲染。
   const campusNetwork = useCampusNetwork()
-  /* --- SYSU-SAM --- */
+  /* --- SYSU-SAM END --- */
 
   const handlePDFChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -130,7 +130,7 @@ function PDFBlockComponent(props: any) {
       </NodeViewWrapper>
     )
   }
-  /* --- SYSU-SAM --- */
+  /* --- SYSU-SAM END --- */
 
   // View mode without PDF
   if (!isEditable && !blockObject) {

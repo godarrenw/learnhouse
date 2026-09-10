@@ -4,7 +4,7 @@ import React from 'react'
 /* --- SYSU-SAM --- */
 import { useCampusNetwork } from '@services/media/useCampusNetwork'
 import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
-/* --- SYSU-SAM --- */
+/* --- SYSU-SAM END --- */
 
 function DocumentPdfActivity({
   activity,
@@ -32,7 +32,7 @@ function DocumentPdfActivity({
       </div>
     )
   }
-  /* --- SYSU-SAM --- */
+  /* --- SYSU-SAM END --- */
 
   return (
     <div className={className ?? "m-0 sm:m-8 bg-zinc-900 sm:rounded-md mt-0 sm:mt-14"}>

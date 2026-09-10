@@ -6261,9 +6261,5 @@
       "signed_in_as": "Signed in as {{email}}",
       "sign_in_to_org": "Sign in to this organization"
     }
-  },
-  "sysu_campus_media": {
-    "title": "This content is available on campus only",
-    "description": "Connect to the campus network or campus VPN, then refresh the page. Everything else on this page works as usual. If your browser asks whether to allow local network access, choose Allow."
   }
 }

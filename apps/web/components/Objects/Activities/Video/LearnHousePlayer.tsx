@@ -7,7 +7,7 @@ import { shouldSendHlsCredentials, type CaptionTrack } from './videoSource'
 /* --- SYSU-SAM --- */
 import { useCampusNetwork } from '@services/media/useCampusNetwork'
 import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
-/* --- SYSU-SAM --- */
+/* --- SYSU-SAM END --- */
 
 const SEEK_SECONDS = 15
 
@@ -93,7 +93,7 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
   // 探不通就直接换成提示卡片。没配 HEAVY_MEDIA_URL 时这里恒为 reachable，
   // 不发任何请求，行为与上游一致。
   const campusNetwork = useCampusNetwork()
-  /* --- SYSU-SAM --- */
+  /* --- SYSU-SAM END --- */
 
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -347,7 +347,7 @@ const LearnHousePlayer: React.FC<LearnHousePlayerProps> = ({
           <CampusOnlyNotice variant="dark" />
         </div>
       )}
-      {/* --- SYSU-SAM --- */}
+      {/* --- SYSU-SAM END --- */}
       {loadError && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 p-4 text-center text-white">
           <p className="text-sm opacity-90">This video couldn’t be loaded.</p>
