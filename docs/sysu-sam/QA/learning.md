@@ -95,52 +95,56 @@ All checks passed!
 
 ## 前端端到端
 
-`apps/web/tests/ext/learning.e2e.ts`（配置 `tests/ext/playwright.e2e.config.ts`）。
-
-仓库本身没有 Playwright 依赖（`bun test tests` 跑的是纯逻辑单测），所以运行器要外挂。
-**文件名是 `.e2e.ts` 不是 `.spec.ts`，两个文件头上都有 `// @ts-nocheck`**，两件事都是必须的：
-
-- bun 的测试发现会把 `*.spec.ts` 当单测收进 `bun test tests`，而那里没有 `@playwright/test`，
-  整个仓库的单测会红（实测：`263 pass, 1 fail, 1 error`）
-- `next build` 会按 tsconfig 的 `include: ["**/*.ts"]` 对这两个文件做类型检查，
-  同样因为找不到 `@playwright/test` 报 TS2307，生产镜像会构建失败
-
-跑法（`bunx playwright test` 不行 —— bunx 解析到的是 `playwright` 核心包，没有 `test` 子命令；
-带 `--package=@playwright/test` 也解析不到配置文件里的 import）：
+用例在 `apps/e2e/features/ext/tests/02-learning.spec.ts`，复用 `apps/e2e` 已有的
+Playwright 工程：会话由 `global-setup` 登录一次存成 storageState，onboarding 遮罩由
+`core/fixtures.ts` 预置，版本跟着 apps/e2e 钉在 `@playwright/test` 1.49.1。
 
 ```sh
-# 找一个仓库外的目录装运行器，别装进 apps/web，避免动 package.json / bun.lock
-mkdir -p /tmp/lh-pw && cd /tmp/lh-pw && bun add -d @playwright/test@1.56.0
-bunx playwright install chromium        # 只需一次
+# 先把演示数据灌进本地栈 —— 干净的库里四个 Tab 全是空态，用例会失败
+docker exec -i learnhouse-db-local psql -U learnhouse -d learnhouse \
+  < docs/sysu-sam/QA/learning/seed-demo-data.sql
 
-cd <repo>/apps/web
-NODE_PATH=/tmp/lh-pw/node_modules /tmp/lh-pw/node_modules/.bin/playwright \
-  test -c tests/ext/playwright.e2e.config.ts
+cd apps/e2e
+bun install && bun run install-browsers        # 首次
+
+E2E_SKIP_BOOT=1 \
+E2E_BASE_URL=http://localhost:3003 \
+E2E_API_URL=http://localhost:9003/api/v1 \
+E2E_ADMIN_EMAIL=user1@example.local \
+E2E_ADMIN_PASSWORD='<本地预发栈管理员密码>' \
+E2E_STUDENT_EMAIL=user2@example.local \
+E2E_STUDENT_PASSWORD='<同上>' \
+bun run test features/ext
 ```
 
-本次结果：`2 passed`。
+`E2E_STUDENT_*` 必须给：本地复刻库的组织开了邀请制，harness 自己建学生会被 403 顶回来，
+`user2@example.local` 是现成的 User 角色账号，正好当反面用例。
 
-跑之前要起本地栈（本次用的端口）：
+前端跑之前要起本地栈（socat 转发容器 `lh-db-fwd-15432` / `lh-redis-fwd-16379` 是共用的，
+别重复起）：
 
 ```
-apps/api  uv run uvicorn app:app --port 9003     # 连 learnhouse-local 的 Postgres/Redis
+apps/api  uv run --no-sync uvicorn app:app --port 9003
 apps/web  bun run dev --port 3003
 ```
 
-以 `user1@example.local` 登录，走完四个 Tab，截图在 `docs/sysu-sam/QA/learning/`：
+本次结果 **15 passed**（骨架 6 条 + 学情 9 条）。按 Tab 拆条而不是一条走完 ——
+合成一条的话成绩册那步一挂，后面三个 Tab 就再也跑不到，报告里只看得见第一个错。
 
-| 截图 | 内容 |
-|---|---|
-| `01-gradebook.png` | 成绩册：三名学生 × 一份作业，已批 / 待批·迟交 / 未交三种状态分别是绿 / 琥珀 / 灰 |
-| `02-gradebook-sorted.png` | 点「总分」表头排序，箭头方向图标出现 |
-| `03-missing.png` | 缺交名单，顶部有按作业筛选的下拉 |
-| `04-progress.png` | 学习进度表，完成度 + 最近学习时间 |
-| `05-progress-detail.png` | 点「明细」弹出的单人抽屉，列出完成的活动与时间，底部带分母说明 |
-| `06-lint.png` | 课程体检，按 error / warn / info 着色，右上角是危险操作按钮 |
-| `07-lint-confirm.png` | 「一键发布未发布活动」的二次确认（`ConfirmDanger`，红色 warning 档） |
-| `08-mobile.png` | 400px 窄屏，不横向溢出，Tab 条横向滚动 |
+| 用例 | 断言 | 截图 |
+|---|---|---|
+| 成绩册三状态 | 已批 / **待批·迟交** / 未交都要在。迟交是最容易写错的一档：服务端从不主动写 LATE，它是靠「提交时间 vs 截止时刻」算出来的，只断言「已批」盖不住 | `01-gradebook.png` |
+| 导出 CSV | 真的触发下载、文件名 `gradebook-*`、落盘文件前三字节是 UTF-8 BOM。拿不到落盘路径就算失败，不做 if 保护悄悄跳过 | — |
+| 表头排序 | 点「总分」后 `aria-sort` 变成 ascending/descending —— 只「点得动」不算数 | `02-gradebook-sorted.png` |
+| 缺交名单 | 筛选下拉可见，且名单里真的有人被列成「未交」 | `03-missing.png` |
+| 学习进度 + 明细 | 进度表可见；明细抽屉打得开，里面写了百分比的分母口径 | `04-progress.png`、`05-progress-detail.png` |
+| 课程体检 | 三级计数与结论列表可见；点「一键发布」先弹二次确认 | `06-lint.png`、`07-lint-confirm.png` |
+| 窄屏 | 400px 下实测 `scrollWidth - clientWidth <= 1`，只截图的话这条永远不会失败 | `08-mobile.png` |
+| 概览最近动态 | 概览页的最近学习卡片至少有一条事件，且没把工具网格挤掉 | `09-overview-recent.png` |
+| 普通成员被拦 | User 角色直接访问 `/dash/tools/learning` 看不到工具，页面是无权限/404 | — |
 
-用例里还断言了导出 CSV 真的触发下载、文件名以 `gradebook-` 开头、内容前三字节是 UTF-8 BOM。
+Apple Silicon 上后端跑测试前要 `uv pip install greenlet`（不改 pyproject / uv.lock），
+并且一律 `uv run --no-sync`。
 
 ### 演示数据
 
@@ -198,7 +202,12 @@ apps/web  bun run dev --port 3003
 临时包解析不到配置里的 import，直接 `MODULE_NOT_FOUND`，等于这条 e2e 跑不起来。
 迁到 apps/e2e 之后复用那边已有的基建：会话由 global-setup 登录一次存成
 storageState、onboarding 遮罩由 fixtures 预置、版本钉在 @playwright/test 1.49.1，
-也不再需要 `@ts-nocheck`。用例内容一字未改，只换了登录与 onboarding 的来路。
+也不再需要 `@ts-nocheck`。
+
+迁移时用例被合成了一条「四个 Tab 都能打开并出数据」，路上掉了几个实质断言
+（迟交状态、`aria-sort`、缺交名单真的有人、明细里的分母说明、窄屏的溢出实测），
+后来做权限修正时一并补回并按 Tab 拆开 —— 合成一条的话成绩册那步一挂，
+后面三个 Tab 就再也跑不到。集成方新加的「概览页最近动态」那条保留。
 
 **2. 三个不该进仓库的文件已移除**：`apps/web/AGENTS.md`、`apps/web/CLAUDE.md`
 （`next dev` 每次启动都会重新生成）、`apps/web/test-results/.last-run.json`
@@ -209,18 +218,18 @@ storageState、onboarding 遮罩由 fixtures 预置、版本钉在 @playwright/t
 **3. `GET /ext/learning/recent` 接上了前端入口**（lead 指定的集成范围内改动）。
 教学工具概览页顶部新增「最近学习动态」卡片，组织级、不用选课，列最近 7 天最多
 8 条学习事件。数据取不到时整块不渲染（学情工具没装、或当前角色 403），
-不影响下面的工具网格。对应 e2e 是第 9 条，截图 `09-overview-recent.png`。
+不影响下面的工具网格。对应 e2e 是「概览页显示最近学习动态卡片」那条，截图 `09-overview-recent.png`。
 
 ### 集成验证结果
 
 | 项 | 结果 |
 | --- | --- |
-| 后端 pytest ext | 48 passed |
+| 后端 pytest ext | 56 passed |
 | 后端 ruff | All checks passed |
 | 前端 tsc | exit 0 |
 | e2e tsc | exit 0 |
 | 前端 lint | 35 error，与基线持平；ext 新目录 0 |
-| e2e | 9 passed（骨架 6 + 学情 3） |
+| e2e | 15 passed（骨架 6 + 学情 9） |
 
 验证环境：本地预发栈，后端 :9008、前端 :3008（避开其他代理占用的 9001-9007 / 3001-3007）。
 
