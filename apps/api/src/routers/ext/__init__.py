@@ -27,6 +27,7 @@ from fastapi import APIRouter
 SUBMODULES: Sequence[Union[str, Tuple[str, str]]] = [
     "health",
     ("learning", "/learning"),
+    ("assign_tools", "/assign"),
 ]
 
 ext_router = APIRouter()
