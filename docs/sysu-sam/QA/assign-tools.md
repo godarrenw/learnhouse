@@ -62,11 +62,11 @@ LEARNHOUSE_EXT_LLM_MODEL=      # 默认模型 id，请求里可以用 model 覆�
 
 ### 4.1 后端单测
 
-`apps/api/src/tests/ext/test_assign_tools.py`，49 条全过：
+`apps/api/src/tests/ext/test_assign_tools.py`，50 条全过：
 
 ```
 $ cd apps/api && uv run pytest src/tests/ext -q
-49 passed
+50 passed
 $ uv run ruff check src/
 All checks passed!
 ```
@@ -77,7 +77,8 @@ All checks passed!
   注释键被忽略、多选自动识别、模板本身能过校验
 - AI 出题：模型说 `publish=true` 也强制改回草稿；模型多出题型会警告；
   连续两次输出解析不出 JSON 才放弃（断言真的重试了一次）；
-  正文太短拒绝；内容页不属于该课程返回 400；没配模型返回 503
+  正文太短拒绝；内容页不属于该课程返回 400；没配模型返回 503；
+  模型自己发明的枚举值（`grading_type: MIXED` 等）被改回默认值并写进警告
 - 建作业：三张表都建出来了、`publish` 覆盖生效、章节不属于课程拒绝、
   **spec 有错时一个活动都不会建**（校验在建任何东西之前完成）
 - 随堂测：默认 `ungraded=True` + `solution_reveal=ON_SUBMISSION` + `auto_grading` 被归零；
@@ -109,10 +110,35 @@ LLM 调用在测试里只 mock 了 `chat_completion` 这一个联网入口。
 `grading_type` / `solution_reveal` / `due_date` 三个字段的非法取值改回默认值，
 并在警告里写明「原值是什么」。截图 `2-ai-preview.png` 里那条黄色提示就是它。
 
-### 4.3 前端走查
+### 4.3 前端走查（带断言，不只是截图）
 
 本地起后端 9005（连预发栈的 Postgres/Redis）+ 前端 3005，用管理员账号登录后
-走完五个 Tab，脚本 `docs/sysu-sam/QA/assign/shots.mjs`（配 `login.mjs` 存登录态）。
+走完五个 Tab。脚本 `docs/sysu-sam/QA/assign/shots.mjs`（配 `login.mjs` 存登录态）
+在仓库根目录跑，**任何一条断言不成立就非零退出**：
+
+```
+$ node docs/sysu-sam/QA/assign/login.mjs
+$ node docs/sysu-sam/QA/assign/shots.mjs
+  ok   五个分段 Tab 都在
+  ok   AI 出题的内容页下拉拉到了课程结构
+  ok   模型下拉拉到了 /ext/assign/llm/models 的结果
+  ok   AI 出题返回了至少一道可编辑的题
+  ok   出完题后出现了「一键布置」
+  ok   随堂测默认勾着「形成性」
+  ok   随堂测表单默认给了一道题
+  ok   查重有阈值滑块
+  ok   查重结果原样显示了后端的免责说明
+  ok   学期复用摘要回显了新课程名
+  ok   只试算，没有真的复制课程
+  ok   版本列表拉到了历史版本
+  ok   diff 视图出来了
+  ok   400px 窄屏没有横向溢出
+  ok   除上游 analytics 外没有失败请求（实际 0 条）
+全部断言通过
+```
+
+被忽略的那一条失败请求是上游的 `POST /api/v1/analytics/events` 400（本地没配 PostHog），
+和作业工具无关。顺带截下的图：
 
 | 截图 | 内容 |
 |---|---|
@@ -126,8 +152,11 @@ LLM 调用在测试里只 mock 了 `chat_completion` 这一个联网入口。
 | `8-versions-unified.png` | unified diff 视图 |
 | `9-mobile-ai.png` | 400px 窄屏，脚本断言了 `scrollWidth <= clientWidth`，没有横向溢出 |
 
-走查过程中前端只有一条 console error，来自上游的 `POST /analytics/events` 400，
-和作业工具无关。
+### 4.4 类型检查与 lint
+
+`npx tsc --noEmit` 在整个 `apps/web` 上退出码 0，无任何输出 —— dev 用的 Turbopack
+不做类型检查，页面能渲染不等于 `bun run build` 能过，所以这一步单独跑了一次
+（把骨架脚手架临时拷进来补齐 `registry.ts` / `types.ts` / `shared/` 之后跑的）。
 
 `bun run lint:strict` 在本分支上报 35 个 error，**全部落在上游文件**
 （`services/courses/transfer.ts`、`components/Dashboard/Boards/Extensions/*`、
@@ -152,6 +181,11 @@ $ npx eslint --max-warnings=0 components/SysuTools/tools/assign services/ext/ass
 4. **没有加 alembic 迁移**，作业工具全部复用上游已有的表。
 5. **接入骨架的两处改动还没落进分支**，见下一节 —— 这条分支是在骨架合入
    `sysu-sam` 之前开的。
+6. **没有往 `apps/e2e` 的 playwright 套件里加 spec。** 上面 4.3 那份走查是带断言的
+   独立脚本，能当验收跑，但它不在 `playwright test` 套件里 —— 套件的 global-setup
+   会自起一套实例，而这条分支的走查依赖预发栈里的真实课程与版本历史。
+   骨架合入后，`apps/e2e/features/ext/tests/` 是约定位置，把这份走查改写成
+   跟着套件跑的 spec 是一件待办。
 
 ## 六、rebase 之后要做的三件事
 
@@ -176,7 +210,7 @@ python3 docs/sysu-sam/QA/assign/register.py
   这一行（或骨架的等价写法）。
 
 改完再跑一遍 `uv run pytest src/tests/ext -q`、`uv run ruff check src/`、
-`bun run lint:strict`，以及 `docs/sysu-sam/QA/assign/shots.mjs`。
+`npx tsc --noEmit`、`bun run lint:strict`，以及 `docs/sysu-sam/QA/assign/shots.mjs`。
 
 ## 七、本地复现环境
 
@@ -193,10 +227,10 @@ LEARNHOUSE_TENANCY=single
 LEARNHOUSE_ALLOWED_ORIGINS=http://localhost:3005,http://127.0.0.1:3005
 LEARNHOUSE_CONTENT_DELIVERY_TYPE=filesystem
 LEARNHOUSE_EXT_LLM_BASE_URL=http://43.134.78.71:8000/v1
-LEARNHOUSE_EXT_LLM_API_KEY=<在 shell 里 export，别写进仓库>
 LEARNHOUSE_EXT_LLM_MODEL=deepseek-v4-flash
 EOF
-uv run uvicorn app:app --host 127.0.0.1 --port 9005
+# key 不写进任何文件，只在启动这一条命令里传
+LEARNHOUSE_EXT_LLM_API_KEY=$LH_LLM_KEY uv run uvicorn app:app --host 127.0.0.1 --port 9005
 
 # 前端
 cd apps/web && bun run dev --port 3005      # .env.local 指向 http://localhost:9005/api/v1/

@@ -1,16 +1,36 @@
 /**
- * 作业工具五个 Tab 的截图脚本（QA 证据用，不进 e2e 套件）。
- * 跑法：cd apps/e2e && node _shots.mjs
- * 前置：先跑 _login.mjs 存下登录态；本地后端 9005、前端 3005。
+ * 作业工具五个 Tab 的端到端走查：既截图，也断言。任何一条断言不成立就非零退出，
+ * 所以它是能当验收用的，不只是拍照。
  *
+ * 跑法（在仓库根目录）：
+ *
+ *   node docs/sysu-sam/QA/assign/login.mjs        # 存登录态
+ *   node docs/sysu-sam/QA/assign/shots.mjs        # 走查 + 截图
+ *
+ * 前置：本地后端 9005、前端 3005（见 docs/sysu-sam/QA/assign-tools.md 第七节）。
  * 只做只读操作 —— 学期复用只走到 confirm=false 的摘要，不会真的复制课程。
  */
-import { chromium } from '@playwright/test'
+import { createRequire } from 'node:module'
+
+// 脚本放在 docs/ 下，node 会按脚本所在目录找 node_modules，找不到 playwright。
+// 从仓库里唯一装了 playwright 的地方（apps/e2e）解析它。
+const require = createRequire(new URL('../../../../apps/e2e/package.json', import.meta.url))
+const { chromium } = require('@playwright/test')
 import fs from 'node:fs'
 
 const BASE = process.env.BASE || 'http://localhost:3005'
-const STATE = '/private/tmp/claude-501/-Volumes-D-code/748617f2-89b2-480a-a7d9-3f9a18f4b748/scratchpad/state.json'
-const OUT = process.env.OUT || '/Volumes/D/code/lh-wt-assign/docs/sysu-sam/QA/assign'
+const STATE = process.env.STATE || './.assign-auth-state.json'
+const OUT = process.env.OUT || new URL('.', import.meta.url).pathname
+
+let failures = 0
+function check(ok, what) {
+  if (ok) {
+    console.log('  ok  ', what)
+  } else {
+    failures += 1
+    console.error('  FAIL', what)
+  }
+}
 
 const COURSE_CONTENT = '制造系统自动化技术（含数字化）'
 const COURSE_ASSIGN = 'AI-Driven Advanced Manufacturing'
@@ -24,9 +44,11 @@ const context = await browser.newContext({
   storageState: STATE,
 })
 const page = await context.newPage()
-const errors = []
-page.on('console', (m) => {
-  if (m.type() === 'error') errors.push(m.text())
+// console 里的「Failed to load resource」看不出是哪个请求，所以按响应记，
+// 这样能把上游 analytics/events 的 400 排除掉（本地没配 PostHog，和作业工具无关）。
+const badResponses = []
+page.on('response', (r) => {
+  if (r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`)
 })
 
 async function dismissOnboarding() {
@@ -76,15 +98,37 @@ const pageOption = await pageSelect
   .getAttribute('value')
 await pageSelect.selectOption(pageOption)
 await page.locator('[data-testid="assign-ai-count"]').fill('3')
+check((await page.locator('[data-testid^="assign-subtab-"]').count()) === 5, '五个分段 Tab 都在')
+check(
+  (await page.locator('[data-testid="assign-ai-page"] option').count()) > 1,
+  'AI 出题的内容页下拉拉到了课程结构'
+)
+check(
+  (await page.locator('[data-testid="assign-ai-model"] option').count()) > 1,
+  '模型下拉拉到了 /ext/assign/llm/models 的结果'
+)
 await shot('1-ai-setup')
 
 await page.click('[data-testid="assign-ai-draft"]')
 await page.waitForSelector('[data-testid="assign-spec-preview"]', { timeout: 180_000 })
 await page.waitForTimeout(1200)
+check(
+  (await page.locator('[data-testid^="assign-spec-task-"]').count()) > 0,
+  'AI 出题返回了至少一道可编辑的题'
+)
+check(
+  (await page.locator('[data-testid="assign-ai-create"]').count()) === 1,
+  '出完题后出现了「一键布置」'
+)
 await shot('2-ai-preview')
 
 // ---- 2. 随堂测 ----
 await tab('quiz')
+check(
+  (await page.locator('[data-testid="assign-quiz-formative"]').isChecked()),
+  '随堂测默认勾着「形成性」'
+)
+check((await page.locator('[data-testid="assign-quiz-q-0"]').count()) === 1, '随堂测表单默认给了一道题')
 await shot('3-quiz-form')
 
 // ---- 3. 查重 / 随堂测结果：换到有作业的那门课 ----
@@ -105,6 +149,14 @@ if ((await simPick.locator('option').count()) > 1) {
   await simPick.selectOption({ index: 1 })
   await page.waitForTimeout(3000)
 }
+check(
+  (await page.locator('[data-testid="assign-sim-threshold"]').count()) === 1,
+  '查重有阈值滑块'
+)
+check(
+  (await page.locator('[data-testid="assign-sim-disclaimer"]').count()) === 1,
+  '查重结果原样显示了后端的免责说明'
+)
 await shot('5-similarity')
 
 // ---- 4. 学期复用：只走到 confirm=false 的摘要 ----
@@ -117,6 +169,12 @@ await page.locator('[data-testid="assign-clone-days"]').fill('182')
 await page.click('[data-testid="assign-clone-preview"]')
 await page.waitForSelector('[data-testid="assign-clone-summary"]', { timeout: 60_000 })
 await page.waitForTimeout(1000)
+const summaryText = await page.locator('[data-testid="assign-clone-summary"]').innerText()
+check(summaryText.includes('2027 春'), '学期复用摘要回显了新课程名')
+check(
+  (await page.locator('[data-testid="assign-clone-done"]').count()) === 0,
+  '只试算，没有真的复制课程'
+)
 await shot('6-clone-summary')
 
 // ---- 5. 版本回滚 ----
@@ -135,6 +193,11 @@ if (await compare.count()) {
   await page.waitForSelector('[data-testid="assign-ver-diff"]', { timeout: 60_000 })
   await page.waitForTimeout(2500)
 }
+check(
+  (await page.locator('[data-testid^="assign-ver-compare-"]').count()) > 0,
+  '版本列表拉到了历史版本'
+)
+check((await page.locator('[data-testid="assign-ver-diff"]').count()) === 1, 'diff 视图出来了')
 await shot('7-versions-diff')
 const unified = page.locator('[data-testid="assign-ver-view-unified"]')
 if (await unified.count()) {
@@ -151,7 +214,16 @@ const overflow = await page.evaluate(
   () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
 )
 await shot('9-mobile-ai')
-console.log('mobile horizontal overflow:', overflow)
+check(!overflow, '400px 窄屏没有横向溢出')
 
-console.log('console errors:', JSON.stringify(errors.slice(0, 10), null, 2))
+const relevant = badResponses.filter((e) => !/\/analytics\//.test(e))
+check(relevant.length === 0, `除上游 analytics 外没有失败请求（实际 ${relevant.length} 条）`)
+if (relevant.length) console.error(relevant.slice(0, 8))
+console.log('（被忽略的上游失败请求：', badResponses.length - relevant.length, '条）')
+
 await browser.close()
+if (failures) {
+  console.error(`\n${failures} 条断言没过`)
+  process.exit(1)
+}
+console.log('\n全部断言通过')
