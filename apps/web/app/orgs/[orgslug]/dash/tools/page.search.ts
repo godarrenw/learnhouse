@@ -5,7 +5,7 @@
  * 加新工具时在下面追加一条，并在 `locales/ext/*.json` 的 `search.<key>` 下
  * 补 description / keywords。
  */
-import { Wrench, Pulse, GraduationCap } from '@phosphor-icons/react'
+import { Wrench, Pulse, FileText, GraduationCap } from '@phosphor-icons/react'
 import type { SearchMeta } from '@/lib/dashboard-search/types'
 
 export const searchMetas: SearchMeta[] = [
@@ -16,6 +16,15 @@ export const searchMetas: SearchMeta[] = [
     keywordsKey: 'ext.search.overview.keywords',
     icon: Wrench,
     href: '/dash/tools',
+    group: 'content',
+  },
+  {
+    id: 'dash.tools.content',
+    titleKey: 'ext.tools.content.title',
+    descriptionKey: 'ext.search.content.description',
+    keywordsKey: 'ext.search.content.keywords',
+    icon: FileText,
+    href: '/dash/tools/content',
     group: 'content',
   },
   {

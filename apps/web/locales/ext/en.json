@@ -19,6 +19,10 @@
       "description": "Entry point for every teaching tool",
       "keywords": "teaching,tools,dashboard"
     },
+    "content": {
+      "description": "Markdown import/export, virtual assistant, QR codes",
+      "keywords": "content,markdown,import,export,avatar,qr,bilibili,video"
+    },
     "example": {
       "description": "Check that the teaching tools extension is wired up",
       "keywords": "example,health,self check"
@@ -55,6 +59,86 @@
     "deleting": "Deleting…"
   },
   "tools": {
+    "content": {
+      "title": "Content Tools",
+      "description": "Import and export a whole course as Markdown, add a virtual assistant to a page, print invite QR codes.",
+      "tabs": {
+        "import": "Import Markdown",
+        "export": "Export Markdown",
+        "avatar": "Virtual assistant",
+        "about": "How it works"
+      },
+      "import": {
+        "title": "Import Markdown",
+        "hint": "Upload a zip produced by Export Markdown. Chapters and pages are always created fresh; nothing already in the course is overwritten.",
+        "drop": "Drop a zip here, or click to pick a file",
+        "limit": "Up to {{mb}} MB",
+        "not_zip": "Only .zip archives are accepted",
+        "too_large": "That archive is over {{mb}} MB",
+        "run": "Start import",
+        "running": "Importing. A large course can take a while…",
+        "done": "Imported {{chapters}} chapters and {{activities}} pages",
+        "failed": "Import failed",
+        "chapters": "Chapters created",
+        "activities": "Pages created",
+        "skipped": "Skipped",
+        "skipped_title": "Not restored",
+        "warnings_title": "Needs a human look"
+      },
+      "export": {
+        "title": "Export Markdown",
+        "hint": "Packaged as a zip: README holds the course info and table of contents, one directory per chapter, page images under assets/.",
+        "lossy": "Export is lossy. Only content pages and full-page embeds can be imported back. Hosted video, PDFs and assignments export as a placeholder note.",
+        "run": "Download archive",
+        "running": "Packaging…",
+        "done": "Downloaded {{name}}",
+        "failed": "Export failed",
+        "chapters": "Chapters",
+        "files": "Files",
+        "images": "Images",
+        "notes": "Notes",
+        "notes_hint": "The README section 「导出时的提醒」 lists exactly what could not be carried over."
+      },
+      "avatar": {
+        "title": "Virtual assistant",
+        "hint": "The script is compressed into the link's fragment. The browser reads it aloud and drives a cartoon avatar. No server load, no API key.",
+        "page": "Append to which page",
+        "pick_page": "Pick one…",
+        "no_pages": "This course has no rich-text pages yet",
+        "subtitle_label": "Heading (optional)",
+        "subtitle_ph": "e.g. Recap of this section",
+        "script": "Script",
+        "script_ph": "Write what should be read aloud. Markdown is fine. Blank lines split paragraphs and add a pause. Code blocks, images and tables cannot be read and are skipped.",
+        "chars": "{{count}} characters",
+        "page_url": "Page URL: {{url}}",
+        "run": "Append to page",
+        "running": "Generating and appending…",
+        "done": "Appended to the end of the page",
+        "failed": "Could not append",
+        "result_title": "Appended to “{{name}}”",
+        "result_meta": "Split into {{lines}} lines, link is {{length}} characters. A version was saved first, so you can undo this from page version history.",
+        "preview": "Preview it before showing students"
+      },
+      "qr": {
+        "button": "QR code",
+        "title": "Signup QR code",
+        "description": "Put this on the classroom wall or in a group chat. Scanning it opens signup with the invite code filled in.",
+        "link_label": "Signup link",
+        "download": "Download SVG",
+        "error": "Could not generate the QR code, please retry"
+      },
+      "about": {
+        "title": "How these tools work",
+        "paste_title": "Paste a video link in the editor",
+        "paste_body": "Paste a bilibili link into a content page and it turns into a player. Seven forms are recognised: the video page, a page with a part number, the mobile host, an av id, a b23.tv short link, an existing player URL, and the whole official iframe snippet. Douyin and Tencent links are still inserted, but you are asked to preview them because we could not verify their players ourselves.",
+        "qr_title": "Invite code QR",
+        "qr_body": "On Users → Signups, every invite code row has a QR button. Download the SVG to print it or share it.",
+        "transfer_title": "What import and export can carry",
+        "transfer_body": "Only content pages and full-page embeds survive the round trip. Original video and PDF files are not in the archive, and assignments should be moved with the assignment tools. Import always creates new chapters and never overwrites what is already there.",
+        "avatar_title": "How the virtual assistant works",
+        "avatar_body": "The script is never stored on the server. It is compressed into the part of the link after the #. The page reads it with the browser's own speech synthesis and drives the avatar's mouth and captions. That is why the link is long, and why it must not be edited by hand — change it and the script is gone."
+      }
+    },
     "example": {
       "title": "Extension Health",
       "description": "Calls the backend /ext/health endpoint to prove the teaching tools extension points are connected.",

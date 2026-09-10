@@ -7,3 +7,4 @@ playwright/.cache/
 
 # Recorded walkthroughs (demo/formative-demo.ts) — regenerate, do not commit.
 demo/output/
+.tmp-content-export.zip

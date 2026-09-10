@@ -32,6 +32,25 @@ uv run uvicorn app:app --reload --port 9000
 
 `requires-python` 钉死在 `>=3.14.7,<3.14.8`，别用别的小版本，`uv sync` 会直接拒绝。
 
+### 跑后端测试
+
+```sh
+cd apps/api
+uv run pytest src/tests/ext -q          # 教学工具那部分
+uv run ruff check src/routers/ext src/services/ext src/tests/ext
+```
+
+**用 `uv run` 而不是直接调 venv 里的 pytest**：`uv run` 会先把环境同步到
+`uv.lock` 再执行，本地手动 `pip install` 进去的东西会被它清掉，所以拿它跑到的
+结果和 CI 一致。
+
+一个踩过的坑：SQLAlchemy 的 async 引擎运行时必须要 `greenlet`，而它一度没被
+装上（marker 在 Apple Silicon 的 macOS 上把它跳过了），症状是所有碰数据库的
+测试都报 `ValueError: the greenlet library is required`，而纯逻辑测试全过 ——
+看起来像"某几个测试写坏了"。现在 `greenlet` 已经显式钉进 `apps/api/pyproject.toml`
+的依赖，`uv sync` 一次就有，不用再手动补装，也**不要**再用
+`uv run --no-sync` 绕过同步。
+
 ### 前端
 
 ```sh
