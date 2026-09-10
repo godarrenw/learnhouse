@@ -77,6 +77,33 @@ PDF 逐条进 `skipped` 而不是静默丢、缺图只记警告不让整页失�
 
 ---
 
+## 1b. 前端自动化测试与类型检查
+
+```sh
+cd apps/web
+bun install --frozen-lockfile
+bun test tests            # 275 pass / 0 fail（其中本分支新增 12 条）
+bunx tsc --noEmit
+```
+
+新增 `tests/ext/content-tools-paste.test.mjs`，12 条覆盖粘贴规则的触发条件。
+这个判断错了有两种后果、都很难被发现：放宽了会把老师正常的文字粘贴吃掉，
+收紧了功能等于没做。所以专门测它。
+
+命中：六种 bilibili 形态、官方 iframe 整段、首尾空白、抖音/腾讯/YouTube。
+不命中：非视频站链接、**bilibili App 的分享文案**（`【某某公开课】 链接 分享自B站`，
+吃掉的话老师的文案就没了）、多行内容、正文里恰好提到 bilibili、
+不带协议头的裸域名、`javascript:` 伪协议、空内容、不含视频站的 iframe。
+
+整套 bun test 里的 `rtl-guard.test.mjs` 会扫全仓库的物理方向 class，它过了，
+说明本分支的新组件没有写 `ml-/pl-/text-left` 这类禁用写法。
+
+`bunx tsc --noEmit` 在本分支新增的四个前端文件上零报错。全仓库确实有若干
+`Cannot find module 'public/*.png'`，那是直接跑 tsc（不经 next build）时的
+图片模块解析问题，干净树上同样存在。
+
+---
+
 ## 2. 手工验的两件事
 
 ### b23.tv 短链真解析（联网）
@@ -237,7 +264,8 @@ skill 的 `export-md` 会把作业的题目和参考答案一起渲染成 Markdo
 `docs/sysu-sam/QA/content/`：
 
 - 本地预发环境上真起前后端，在编辑器里真粘一条 bilibili 链接，断言出现
-  `blockEmbed`（playwright）
+  `blockEmbed`（playwright）。粘贴规则的**匹配条件**已有 12 条 bun 单测覆盖，
+  但「真的插进了编辑器、真的压过了 Link 的 linkOnPaste」只能在浏览器里验
 - 工具页三个 Tab（导入 Markdown / 导出 Markdown / 虚拟助教）的端到端
 - 邀请码页二维码弹窗的端到端与截图
 - 虚拟助教追加到真页面后，学生端活动页里那个 iframe 真的能出声
