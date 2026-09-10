@@ -24,7 +24,7 @@
 | 2 | **DSM 管理员账号密码** | ⬜ 待提供 | acme.sh 的 `synology_dsm` 钩子把 media 证书装进 DSM 要用；开了两步验证还要 OTP 或信任设备，见 §5.2。**阶段二才需要** |
 | 3 | **NAS 的 SSH / ContainerManager 访问** | ⬜ 待提供 | 跑 `deploy.sh`、看 `intelligent_mayer` 的日志、加 DSM 反代规则 |
 | 4 | **一个无课时间窗口** | ⬜ 待安排 | 阶段一切 DNS 有 1~5 分钟解析切换；阶段二重建 nginx 约 10 秒 |
-| 5 | **三条待核实信息的答案** | ⬜ 待确认 | 见 §0.1。第 (b) 条影响阶段二整体可行性 |
+| 5 | **待核实信息的答案** | 🟡 部分已答 | 见 §0.1。(b) Chrome LNA 已实测排除；(a) DSM Host 传递与 (c) 校园 DNS 仍待确认 |
 | 6 | **给老师的告知**（100 MB 上传限制） | ⬜ 待发 | 阶段一上线当天，文案见 §7 |
 
 > ⚠️ **凭据卫生**：`cf.env` 里目前是 **Global API Key**，权限覆盖整个账号下所有 zone。
@@ -42,8 +42,9 @@
 分流静默不生效（不会成环，配置里用的是正向白名单）。真是这样就要在 DSM 侧把
 「传递原始主机头 / Preserve Host」打开。
 
-**（b）校内 Chrome 会不会弹「允许访问本地网络」？**
-见 §3 第 5 条。**这条如果成立，会影响阶段二的整体可行性**，请在阶段二动手前实测一次。
+**（b）校内 Chrome 会不会弹「允许访问本地网络」？——（已答）不会。**
+Chrome 152 实测：公网页面加载私网子资源既不拦也不弹窗，证据见 §3 第 5 条。
+同一次测试还查实 `media.sysu-sam.com` 目前没有可用证书，§5 的签证书步骤是硬前置。
 
 **（c）校园 DNS 能不能做 split-horizon？**
 如果学校网络中心愿意在校园 DNS 上把 `learn.sysu-sam.com` 解析到 `172.25.5.162`（校外仍走 CF），
@@ -309,25 +310,45 @@ sudo docker-compose -p learnhouse-nas up -d --force-recreate nginx cloudflared
    免费账号有被警告或限速的先例。**阶段一让全部视频经过 CF 是过渡状态，不应长期停留**，
    这也是阶段二紧接着排的原因。
 
-5. **浏览器对「公网页面访问内网地址」的限制（阶段二特有，务必先核实）。**
-   橙云之后 `learn.sysu-sam.com` 解析到 CF 的公网 IP，页面属于 **public** 地址空间；
-   而 `media.sysu-sam.com` 指向 `172.25.5.162`，属于 **private**。
-   Chromium 系（Chrome / Edge）近年在推 Local Network Access：公网页面访问本地网络地址
-   需要用户点一次「允许」，拒绝就直接被拦。真要生效的话，影响是双重的：
-   校内用户第一次播视频 / 开 PDF 会弹权限框，而且 `useCampusNetwork` 的探测本身也会被拦，
-   **把校内用户误判成校外**。
+5. **浏览器对「公网页面访问内网地址」的限制 —— 已实测，当前不阻断。**
 
-   **这条我没有实测过，具体从哪个版本默认开启也不确定，所以阶段二开始前必须先核实一次**：
-   在校内用当前版 Chrome 打开一个会 302 到 media 的视频，看有没有权限弹窗；
-   或者到 `chrome://flags` 搜 Local Network Access 看当前状态。
+   橙云之后 `learn.sysu-sam.com` 解析到 CF 公网 IP，页面属 **public** 地址空间；
+   `media.sysu-sam.com` 指向 `172.25.5.162`，属 **private**。Chromium 系近年在推
+   Local Network Access（LNA），公网页面访问本地网络地址可能需要用户授权。
+   之前这条写成「未实测、可能影响阶段二可行性」，现在实测过了：
 
-   两个缓解办法：
-   - **（首选）走设计文档 §9.3 的校园 DNS split-horizon**：让校园 DNS 把
-     `learn.sysu-sam.com` 也解析到 `172.25.5.162`。两端同属 private 地址空间，
-     这个限制就不存在了，而且校内全程走局域网、没有 100 MB 上传限制。
-     **如果这条限制被证实存在，§9.3 就不再是「更优解」，而是必要项。**
-   - 接受一次性弹窗，并在提示文案里加一句「如果浏览器询问是否允许访问本地网络，请选择允许」
-     （`feat/tunnel-web` 分支的 `CampusOnlyNotice.tsx` 与 i18n 文案）。
+   | 项 | 值 |
+   |---|---|
+   | Chrome 版本 | **152.0.7977.83**（macOS，2026-09-10） |
+   | 测试页面 | `https://blog.sysu-sam.com/`（Cloudflare Pages，**真实公网 IP**） |
+   | 目标 | `https://media.sysu-sam.com/…`（解析到 172.25.5.162，private） |
+   | 载体 | `fetch(mode:'no-cors')`、`<video src>`、`<img src>` 各一次 |
+   | 结果 | 三者都失败在 **`net::ERR_CERT_COMMON_NAME_INVALID`** |
+   | 有无权限弹窗 | **无** |
+   | 强制打开 LNA 特性后 | 结论相同（`--enable-features=LocalNetworkAccessChecks,LocalNetworkAccessPermissionPrompt,PrivateNetworkAccessPermissionPrompt`） |
+
+   **为什么这个结果能说明「没被拦」**：拿到的是**证书错误**，意味着 TCP 连接已经
+   建立、TLS 握手已经进行到校验证书这一步 —— 请求确确实实到达了那台私网主机。
+   LNA 拦截发生在建立连接**之前**，会给出专门的 `ERR_BLOCKED_BY_*` 错误码而不是
+   证书错误。所以：**Chrome 152 下，公网页面加载私网子资源既没有被拦、也没有弹窗。**
+
+   测试方法刻意没有用 `--host-resolver-rules` 把假域名映射到私网 —— 那样页面自己
+   就落在 private 空间，private→private 本来就不触发 LNA，会得到假阴性。必须让
+   页面真的从公网 IP 下载，所以直接导航到已有的 CF Pages 站点再注入子资源请求，
+   全程没有发布或修改任何内容。
+
+   **顺带查实的一件事**：`media.sysu-sam.com` 现在**没有可用证书** —— DSM 在 443
+   上用的是别的名字的证书。这不是推测，是上面那个 `ERR_CERT_COMMON_NAME_INVALID`
+   直接证明的。所以 §5 的 acme.sh 签通配符证书是阶段二的**硬前置**，不能跳。
+
+   **仍然要留意的**：LNA 是 Chromium 正在推进的能力，今天不拦不代表明年不拦。
+   缓解办法两条，与之前一致：
+   - **（首选）设计文档 §9.3 的校园 DNS split-horizon**：让校园 DNS 把
+     `learn.sysu-sam.com` 也解析到 `172.25.5.162`。两端同属 private 空间，
+     这条风险永久消失，而且校内全程走局域网、没有 100 MB 上传限制。
+   - 前端提示文案里已经带了一句「如果浏览器询问是否允许访问本地网络，请选择允许」
+     （`CampusOnlyNotice.tsx` 与 `locales/ext/*.json` 的 `campus_media.description`）。
+     真的开始弹窗时不用改代码。
 
 WebSocket（`/collab` 白板）经隧道没有问题。
 
