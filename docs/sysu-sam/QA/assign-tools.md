@@ -287,3 +287,53 @@ cd apps/web && bun run dev --port 3005      # .env.local 指向 http://localhost
 Apple Silicon 上 `greenlet` 不在 `uv.lock` 的 marker 里（它认 `aarch64`，
 macOS 报的是 `arm64`），跑 pytest 前要 `uv pip install greenlet`，
 然后一律用 `uv run --no-sync`，**不要动 `pyproject.toml` / `uv.lock`**。
+
+---
+
+## AI 出题真实链路验证（集成代理，2026-09-10）
+
+之前几轮 e2e 都因为本地栈没配大模型端点而走了降级分支（断言模型下拉禁用 +
+有提示文案），**AI 出题的真实链路一直没被端到端验证过**。这次补上了。
+
+配置写在 `apps/api/.env`（gitignore，不进仓库）：端点指向自研中转服务
+`http://43.134.78.71:8000/v1`，key 从 shell 环境变量取、不落盘到任何提交物，
+模型 `deepseek-v4-flash`。
+
+### 直接调接口
+
+`GET /ext/assign/llm/models` 真实返回 64 个模型，deepseek 系列五个都在。
+
+`POST /ext/assign/courses/{uuid}/activities/{uuid}/draft`，用《1.1 什么是自动化？
+数字化？》这一页（正文 3457 字）出 2 道题：
+
+| 字段 | 值 |
+| --- | --- |
+| HTTP | 200 |
+| 用时 | 7.18s |
+| model | deepseek-v4-flash |
+| endpoint | http://43.134.78.71:8000/v1 |
+| attempts | 1（一次成功，没有重试） |
+| page_chars | 3457 |
+| validation.ok | true |
+
+出的两道题分别是选择题与简答题，题目内容确实取自正文（选择题问的是「自动化
+系统可以划分为哪三个技术层级」）。
+
+### e2e 走真出题分支
+
+`03-assign-tools.spec.ts` 的「AI 出题读得到课程结构，出的题落在可编辑的预览里」
+这条会自己判断模型下拉是否可用。配好之后重跑，这条从 **0.76s 变成 5.1s**，
+说明真的走了大模型分支而不是那个 return。8 条全过。
+
+截图要带 `EXT_SHOTS=1` 才会写（`maybeShot` 里的开关），这一轮八张全部按真出题
+的结果重出了。`2-ai-preview.png` 里题干、四个选项、正确答案的勾选、简答题的
+可接受答案都渲染出来了，且题干可编辑；选择题问的是「数控机床中，负责解释加工
+程序并产生指令的是哪一部分」，答案勾在「控制系统」上——确实是从正文里出的题，
+不是夹具里写死的。
+
+### 一个使用上的注意
+
+出题要求内容页有实质正文。我第一次拿的活动正文是 0 字，接口返回 400 并说清了
+原因（「这一页的正文太短（0 字）……确认它是一个富文本内容页，而不是视频或
+PDF 活动」）。这个错误提示是好的，直接告诉了老师该怎么办。
+
