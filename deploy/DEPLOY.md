@@ -180,3 +180,61 @@ app 冷启要跑迁移，超时给到 240s（生产 `start_period` 是 180s）�
   第一次部署本身就是那次对齐。
 - 部署脚本要不要自己去 GitHub 查「这个 commit 的镜像构建成功了没」，
   而不是闷头 `pull` 一个可能还没推上去的 tag。
+
+---
+
+## Cloudflare Tunnel 之后：同步清单与重建规则的变化
+
+隧道改造（`TUNNEL_RUNBOOK.md`）给部署流程加了一个服务和一个 `.env` 键。
+**`deploy.sh` 的核心流程没有改**，但下面几点必须知道，否则第一次部署会漏掉 cloudflared。
+
+### `.env` 新增的键
+
+`.env` 从来不由脚本同步，这两个键要在 NAS 上手工加（对照 `.env.example` 末尾）：
+
+| 键 | 什么时候要 | 说明 |
+|---|---|---|
+| `CF_TUNNEL_TOKEN` | 阶段一 | 隧道连接器凭据，从 Zero Trust 控制台复制。留空时 compose 只报 warning，其它服务照常起，但 cloudflared 会起不来 |
+| `NEXT_PUBLIC_LEARNHOUSE_HEAVY_MEDIA_URL` | 阶段三（校外提示） | 只给前端探测校园网可达性用。**不要**和上游的 `NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL` 搞混，后者会把所有图片一起搬走 |
+
+`docker-compose config -q` 在 `CF_TUNNEL_TOKEN` 未设时给的是 warning 不是 error
+（本地用 compose v2 确认过），所以 `deploy.sh` 第 1 步的语法预检不会因为它没填而失败。
+
+### cloudflared 不在 `deploy.sh` 的重建清单里
+
+脚本里 `SERVICES` 恒为 `learnhouse-app ssr-fwd nginx`，**不含 cloudflared**。这是故意的，
+但意味着两件事要手工做：
+
+1. **第一次上线**要单独起它：
+   ```sh
+   sudo docker-compose -p learnhouse-nas pull cloudflared
+   sudo docker-compose -p learnhouse-nas up -d cloudflared
+   ```
+2. **以后每次 `deploy.sh` 之后都要重建它**。cloudflared 按容器名解析 nginx，
+   而 `deploy.sh` 每次都会 `--force-recreate nginx`，nginx 的容器 IP 随之改变；
+   compose 的 `depends_on` 不会连带重建依赖方，所以：
+   ```sh
+   sudo docker-compose -p learnhouse-nas up -d --force-recreate cloudflared
+   ```
+   漏了这一步的表现是：网站在校内正常，校外 502 或超时。
+
+### cloudflared 不能进 `HEALTHY_CONTAINERS`
+
+`deploy.sh` 的预检和健康检查都轮询 `HEALTHY_CONTAINERS` 里那四个容器。
+cloudflared 镜像里没有 shell 也没有 curl，**没有 healthcheck**，
+把它加进去会让预检永远等不到 healthy。验隧道状态另外看：
+
+```sh
+sudo docker logs --tail 40 learnhouse-cloudflared-nas | grep 'Registered tunnel connection'
+```
+
+或者 Zero Trust → Tunnels 列表里那条是不是 HEALTHY。
+
+### nginx 配置变成两个 server 块之后
+
+`extra/nginx.prod.conf` 现在是 learn + media 两个 server 块，
+顶部 `$media_split_enabled` 那一行是媒体分流的总闸（`off` = 行为与改造前完全一致）。
+「必须 `--force-recreate` 而不是 reload」这条铁律不变，理由也不变：单文件 bind-mount 钉的是 inode。
+
+`deploy.sh` 判断「受影响服务」的逻辑是「compose 或 extra 任何一处变了就重建 app + ssr-fwd + nginx」，
+改总闸落在 `extra/` 里，会被正确识别。

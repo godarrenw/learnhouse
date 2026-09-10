@@ -56,6 +56,46 @@ services:
       timeout: 10s
       retries: 3
 
+  # cloudflared —— Cloudflare Tunnel 出站连接器（阶段一新增）
+  #
+  # NAS 不需要任何公网入站端口：容器主动建立出站 443 连接到 CF 边缘，
+  # 用户流量由 CF 沿这条连接回灌到 learnhouse-nginx-nas:80。
+  #
+  # token 里已经包含隧道 id 与凭据，**只写在 .env 的 CF_TUNNEL_TOKEN，不要写进本文件**
+  # （本文件入 git，.env 不入）。token 泄露等于把隧道交出去，泄露后到 Zero Trust
+  # 控制台 Refresh token 即可作废旧的。
+  #
+  # 版本钉死不用 latest：隧道断了要能确定是不是升级引入的。当前 tag 2026.9.0
+  # （2026-09-09 发布，多架构 manifest 含 amd64，NAS 是 x86_64）。
+  # 升级方式：改这里的 tag -> docker-compose pull cloudflared ->
+  #           docker-compose up -d --force-recreate cloudflared。
+  #
+  # 注意几件事：
+  #   - depends_on 只挂 nginx。它按容器名/服务名解析 nginx，nginx 一旦被重建，
+  #     IP 会变，cloudflared 需要跟着重建（compose 不会自动连带重建 dependents）。
+  #     部署脚本里 nginx 与 cloudflared 要一起 --force-recreate，见 DEPLOY.md。
+  #   - 没有 healthcheck（cloudflared 镜像里没有 shell 也没有 curl）。
+  #     **不要**把它加进 deploy.sh 的 HEALTHY_CONTAINERS，否则预检永远过不了。
+  #     验隧道状态看 `docker logs learnhouse-cloudflared-nas` 里的
+  #     "Registered tunnel connection"，或 Zero Trust 控制台的 HEALTHY 标记。
+  #   - Public hostname 的 Service 要填 http://learnhouse-nginx-nas:80，
+  #     **不要填 8088** —— 那是宿主机映射端口，容器网络里不存在。
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.0
+    container_name: learnhouse-cloudflared-nas
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    env_file:
+      - .env
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks:
+      - learnhouse-network-nas
+    # NAS 只有 4G 内存且在用 swap，给它设个上限免得意外吃内存。
+    # cloudflared 常驻约 20~40MB，256m 很宽松。
+    mem_limit: 256m
+
   ssr-fwd:
     image: alpine/socat:1.8.0.0
     container_name: learnhouse-ssr-fwd-nas
