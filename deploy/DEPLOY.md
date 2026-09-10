@@ -194,47 +194,48 @@ app 冷启要跑迁移，超时给到 240s（生产 `start_period` 是 180s）�
 
 | 键 | 什么时候要 | 说明 |
 |---|---|---|
-| `CF_TUNNEL_TOKEN` | 阶段一 | 隧道连接器凭据，从 Zero Trust 控制台复制。留空时 compose 只报 warning，其它服务照常起，但 cloudflared 会起不来 |
+| `CF_TUNNEL_TOKEN` | **当前不需要**（备用） | 隧道复用 NAS 上已有的 SZ_NAS，那个容器不在本 compose 里也不读这个 `.env`。只有将来要起独立隧道才填 |
 | `NEXT_PUBLIC_LEARNHOUSE_HEAVY_MEDIA_URL` | 阶段三（校外提示） | 只给前端探测校园网可达性用。**不要**和上游的 `NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL` 搞混，后者会把所有图片一起搬走 |
 
 `docker-compose config -q` 在 `CF_TUNNEL_TOKEN` 未设时给的是 warning 不是 error
 （本地用 compose v2 确认过），所以 `deploy.sh` 第 1 步的语法预检不会因为它没填而失败。
 
-cloudflared 服务**刻意没有 `env_file: - .env`**：它是直面 CF 边缘的容器，
-灌整个 `.env` 等于把数据库密码、JWT 密钥、AI 与 Resend 的 key 都塞进它的环境变量，
-而它一个都用不上。`${CF_TUNNEL_TOKEN}` 走的是 compose 自己的变量插值
-（读部署目录下的 `.env`），与 `env_file` 无关，已用 `docker compose config` 验过插值仍生效。
+compose 里那段（已注释的）备用 cloudflared 服务**刻意没有 `env_file: - .env`**：
+它是直面 CF 边缘的容器，灌整个 `.env` 等于把数据库密码、JWT 密钥、AI 与 Resend 的 key
+都塞进它的环境变量，而它一个都用不上。`${CF_TUNNEL_TOKEN}` 走的是 compose 自己的
+变量插值（读部署目录下的 `.env`），与 `env_file` 无关，已用 `docker compose config`
+验过插值仍生效。将来真要启用那段时，别把 `env_file` 加回去。
 
-### cloudflared 不在 `deploy.sh` 的重建清单里
+### 隧道不在本 compose 里
 
-脚本里 `SERVICES` 恒为 `learnhouse-app ssr-fwd nginx`，**不含 cloudflared**。这是故意的，
-但意味着两件事要手工做：
+**学堂的隧道复用 NAS 上已经在跑的那个 cloudflared 容器**（隧道 SZ_NAS，
+id `f8b7e1c1-6077-4fc4-9a55-c4bc1678d325`，chat / wandb / overleaf 都走它）。
+它不属于 `learnhouse-nas` 这个 compose 项目，也不读部署目录的 `.env`。
 
-1. **第一次上线**要单独起它：
-   ```sh
-   sudo docker-compose -p learnhouse-nas pull cloudflared
-   sudo docker-compose -p learnhouse-nas up -d cloudflared
-   ```
-2. **`deploy.sh` 之后通常不用管它**。`deploy.sh` 每次都会 `--force-recreate nginx`，
-   nginx 的容器 IP 会变，但 cloudflared 每次新建连接都重新解析容器名，
-   旧连接失败后自动重拨，几秒内自愈。**没必要每次都重建它** ——
-   每重建一次，校外用户就多断一次。
-   只有 deploy 之后校外持续 502 / 超时才手工来一下：
-   ```sh
-   sudo docker-compose -p learnhouse-nas up -d --force-recreate cloudflared
-   ```
+对部署流程的影响是：**没有影响**。`deploy.sh` 的 `SERVICES`、
+`HEALTHY_CONTAINERS`、同步清单一个都不用改，本 compose 里那段 cloudflared
+已经整段注释掉了（留作「将来要独立隧道」的备用）。
 
-### cloudflared 不能进 `HEALTHY_CONTAINERS`
-
-`deploy.sh` 的预检和健康检查都轮询 `HEALTHY_CONTAINERS` 里那四个容器。
-cloudflared 镜像里没有 shell 也没有 curl，**没有 healthcheck**，
-把它加进去会让预检永远等不到 healthy。验隧道状态另外看：
+要给隧道加 / 撤 learn 这条 ingress，走 `deploy/cf/` 下的脚本，那是 Cloudflare API
+操作，与 `deploy.sh` 是两条独立的线：
 
 ```sh
-sudo docker logs --tail 40 learnhouse-cloudflared-nas | grep 'Registered tunnel connection'
+cd deploy/cf
+./tunnel-add-learn.sh                 # 预演，只读
+CONFIRM=yes ./tunnel-add-learn.sh     # 真改
 ```
 
-或者 Zero Trust → Tunnels 列表里那条是不是 HEALTHY。
+隧道健康状态这样看（在 NAS 上，容器名 `intelligent_mayer`）：
+
+```sh
+sudo docker logs --tail 40 intelligent_mayer | grep 'Registered tunnel connection'
+```
+
+或者 Zero Trust → Networks → Tunnels 里 SZ_NAS 是不是 HEALTHY。
+
+> ⚠️ 那个容器用的是浮动 tag `cloudflared:latest`，客户端版本 2024.11.1。
+> **切换窗口期内不要对它做 `docker pull` 或重建** —— 它还扛着 chat / wandb /
+> overleaf 三个服务，重建会让那几个也断一下。
 
 ### nginx 配置变成两个 server 块之后
 
