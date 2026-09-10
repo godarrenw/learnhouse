@@ -7,7 +7,10 @@
 三层权限，缺一不可：
 1. `router.py` 挂载时的 `require_authenticated_user`（拒匿名、拒 API token）
 2. `deps.require_teacher`：调用者在 `?org_id=` 那个组织里是 Admin / Maintainer / Instructor
-3. `rbac_check_course`：调用者对这门具体课程有 read（写操作要 update）权限
+3. `rbac_check_course`：调用者必须**能改这门具体课程**（作者 / 课程管理员 / Admin
+   / Maintainer）。四个只读接口也判 update 而不是 read —— 它们吐的是学生姓名、
+   成绩和学习记录，而 read 权限对公开课程的任何登录用户都成立，按 read 判等于
+   把全班数据开放给选课的人。
 
 另外每个带 course_uuid 的接口都会核对课程确实属于 `org_id` 那个组织，
 防止拿 A 组织的教师身份去读 B 组织的课。
@@ -61,7 +64,7 @@ def _csv_response(payload: bytes, filename: str) -> Response:
     responses={
         200: {"description": "成绩册数据，或 CSV 文件"},
         401: {"description": "未登录"},
-        403: {"description": "不是教师，或对这门课没有权限"},
+        403: {"description": "不是教师，或对这门课没有修改权限"},
         404: {"description": "课程不存在"},
     },
 )
@@ -75,7 +78,7 @@ async def api_gradebook(
     current_user: PublicUser = Depends(require_teacher),
 ):
     course = await resolve_course(db_session, course_uuid, org_id)
-    await rbac_check_course(request, course_uuid, current_user, "read", db_session)
+    await rbac_check_course(request, course_uuid, current_user, "update", db_session)
     data = await build_gradebook(db_session, course)
     if format == "csv":
         return _csv_response(gradebook_csv(data), "gradebook-%s.csv" % course_uuid[:8])
@@ -94,7 +97,7 @@ async def api_gradebook(
         200: {"description": "缺交名单，或 CSV 文件"},
         400: {"description": "作业不属于这门课"},
         401: {"description": "未登录"},
-        403: {"description": "不是教师，或对这门课没有权限"},
+        403: {"description": "不是教师，或对这门课没有修改权限"},
         404: {"description": "课程不存在"},
     },
 )
@@ -109,7 +112,7 @@ async def api_missing(
     current_user: PublicUser = Depends(require_teacher),
 ):
     course = await resolve_course(db_session, course_uuid, org_id)
-    await rbac_check_course(request, course_uuid, current_user, "read", db_session)
+    await rbac_check_course(request, course_uuid, current_user, "update", db_session)
     data = await build_missing(db_session, course, assignment_uuid)
     if format == "csv":
         return _csv_response(missing_csv(data), "missing-%s.csv" % course_uuid[:8])
@@ -129,7 +132,7 @@ async def api_missing(
     responses={
         200: {"description": "进度数据，或 CSV 文件"},
         401: {"description": "未登录"},
-        403: {"description": "不是教师，或对这门课没有权限"},
+        403: {"description": "不是教师，或对这门课没有修改权限"},
         404: {"description": "课程或学生不存在"},
     },
 )
@@ -144,7 +147,7 @@ async def api_progress(
     current_user: PublicUser = Depends(require_teacher),
 ):
     course = await resolve_course(db_session, course_uuid, org_id)
-    await rbac_check_course(request, course_uuid, current_user, "read", db_session)
+    await rbac_check_course(request, course_uuid, current_user, "update", db_session)
     if student:
         return await build_student_progress(db_session, course, student)
     data = await build_progress(db_session, course)
@@ -190,7 +193,7 @@ async def api_recent(
     responses={
         200: {"description": "体检结果"},
         401: {"description": "未登录"},
-        403: {"description": "不是教师，或对这门课没有权限"},
+        403: {"description": "不是教师，或对这门课没有修改权限"},
         404: {"description": "课程不存在"},
     },
 )
@@ -203,7 +206,7 @@ async def api_lint(
     current_user: PublicUser = Depends(require_teacher),
 ):
     course = await resolve_course(db_session, course_uuid, org_id)
-    await rbac_check_course(request, course_uuid, current_user, "read", db_session)
+    await rbac_check_course(request, course_uuid, current_user, "update", db_session)
     return await lint_course(db_session, course)
 
 
@@ -234,6 +237,5 @@ async def api_lint_fix_publish(
     current_user: PublicUser = Depends(require_teacher),
 ):
     course = await resolve_course(db_session, course_uuid, org_id)
-    # 写操作要求 update 权限，比读接口更严
     await rbac_check_course(request, course_uuid, current_user, "update", db_session)
     return await fix_publish(db_session, course, body.get("confirm") is True)

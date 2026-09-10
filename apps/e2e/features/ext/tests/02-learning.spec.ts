@@ -12,7 +12,7 @@
  */
 import { expect, test } from '../../../core/fixtures'
 import { BASE_URL } from '../../../core/instance'
-import { ADMIN_STATE } from '../../../core/sharedAuth'
+import { ADMIN_STATE, STUDENT_STATE } from '../../../core/sharedAuth'
 
 const TOOL_URL = `${BASE_URL}/dash/tools/learning`
 // 截图落到仓库根的 docs/ 下（playwright 的工作目录是 apps/e2e）
@@ -95,3 +95,24 @@ test.describe('教学工具 / 学情', () => {
     await page.screenshot({ path: `${SHOTS}/09-overview-recent.png`, fullPage: true })
   })
 })
+
+/* --- SYSU-SAM: 越权面的反面用例 --- */
+test.describe('教学工具 / 学情 — 普通成员视角', () => {
+  test.use({ storageState: STUDENT_STATE })
+
+  /**
+   * 学情的每个接口都吐学生姓名、成绩和学习记录，所以课程级判定用的是「能改这门课」
+   * 而不是 read —— 公开课程的 read 权限对任何登录用户都成立，按 read 判等于把
+   * 全班数据开放给选了课的人。接口层的 403 由 pytest 覆盖
+   * （`test_student_cannot_read_class_data_of_public_course`，四个只读接口逐个验），
+   * 这里只确认界面这一端也进不去。
+   */
+  test('User 角色进不去学情工具', async ({ page }) => {
+    await page.goto(TOOL_URL)
+    await expect(page.getByTestId('learning-tool')).toHaveCount(0)
+    await expect(page.locator('body')).toContainText(
+      /don't have access|permission|没有权限|404|not found|页面不存在/i
+    )
+  })
+})
+/* --- /SYSU-SAM --- */

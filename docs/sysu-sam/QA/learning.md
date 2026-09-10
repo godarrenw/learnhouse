@@ -16,11 +16,22 @@ skill 里那一整套 sshpass / pexpect / NAS 密码全部没有了。
 1. `router.py` 挂载时的 `require_authenticated_user`：拒匿名、拒 API token
 2. `routers/ext/deps.require_teacher`：调用者在 `?org_id=` 那个组织里必须是
    Admin / Maintainer / Instructor（判据是 `dashboard.action_access`）
-3. `services/ext/learning/common.rbac_check_course`：调用者对这门具体课程有 read 权限，
-   写操作要 update
+3. `services/ext/learning/common.rbac_check_course`：调用者必须**能改这门具体课程**
+   （作者 / 课程维护者 / Admin / Maintainer）。四个只读接口也判 update，不判 read
 
 另外每个带 `course_uuid` 的接口都核对课程确实属于 `org_id` 那个组织，不属于就按 404 处理
 （返回 403 会泄露这门课存在）。
+
+**为什么只读接口也判 update**：这四个接口吐的是学生姓名、邮箱、成绩和学习记录。
+课程的 `read` 权限门槛很低 —— 公开课程对组织里任何登录用户都成立，绑定用户组的成员
+也算，按 read 判等于让一个选了课的人就能把全班成绩拉走。所以四个只读接口和
+`fix-publish` 用同一道门。
+
+**这个收紧的代价**（显式记录，别以后当 bug 来查）：本地库内置的 Instructor 角色是
+`courses.action_update=false` + `action_update_own=true`，所以一个 Instructor 只有在
+**自己是这门课的作者 / 维护者 / 贡献者**时才看得到它的学情；帮别人代课、又没被加进
+课程作者列表的 Instructor 会被拦。宁可少给，也不能让选课的人拿到全班数据。
+两种情况都有 pytest 钉着（`test_instructor_needs_authorship_on_the_course`）。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -58,16 +69,22 @@ skill 里那一整套 sshpass / pexpect / NAS 密码全部没有了。
 
 ```
 $ uv run pytest src/tests/ext -q
-48 passed
+56 passed
 ```
 
-（48 条里包含骨架代理的 `test_health.py`，学情自己 24 条。）
+（56 条里包含骨架代理的 `test_health.py`，学情自己 33 条。）
 
 覆盖到的点：矩阵取值与状态、没绑用户组时的 note、CSV 带 BOM、迟交判定、进度分母含未发布活动、
 单人明细、学生不存在 404、最近事件按组织隔离、时区转换、中文姓名不加空格、
 体检的六种结论（空页 / 未发布活动 / 作业壳没记录 / 作业没题 / 截止日期已过 / 作业未发布）、
 一键发布必须带 confirm、有 error 的活动不会被发布，以及路由层的 org_id 必填、跨组织 404、
 课程级权限不通过时 403。
+
+**越权回归**（这批用例在改成 update 之前是红的，实测四个只读接口对 User 角色都返回 200）：
+`test_student_cannot_read_class_data_of_public_course` 逐个验 gradebook / missing /
+progress / lint 对**公开课程**必须 403，`test_student_cannot_trigger_fix_publish` 验写操作，
+`test_course_owner_still_passes` 保证没把老师自己挡住，
+`test_instructor_needs_authorship_on_the_course` 钉住 Instructor 的作者边界。
 
 ```
 $ uv run ruff check src/routers/ext src/services/ext src/tests/ext

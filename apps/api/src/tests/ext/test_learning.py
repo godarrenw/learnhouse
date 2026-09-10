@@ -688,3 +688,184 @@ async def test_route_denies_user_without_course_rights(client, deny_course, cour
         "/api/v1/ext/learning/courses/%s/gradebook?org_id=1" % course.course_uuid
     )
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 越权回归：只读接口也必须按「能改这门课」判，不能按 read 判
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def student_app(db, regular_user):
+    """把 require_teacher 换成一个 User 角色的账号。
+
+    require_teacher 本身会挡住 User（它查 dashboard.action_access），这里绕过它
+    是为了单独验证第二道门 —— 课程级判定 —— 自己也拦得住，两道门任何一道失效都
+    不至于把全班成绩漏出去。
+    """
+    application = FastAPI()
+    application.include_router(learning_router, prefix="/api/v1/ext/learning")
+    application.dependency_overrides[get_db_session] = lambda: db
+    application.dependency_overrides[require_teacher] = lambda: regular_user
+    yield application
+    application.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def student_client(student_app):
+    async with AsyncClient(
+        transport=ASGITransport(app=student_app), base_url="http://test"
+    ) as async_client:
+        yield async_client
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["gradebook", "missing", "progress", "lint"],
+)
+async def test_student_cannot_read_class_data_of_public_course(
+    student_client, course, usergroup, assignment, submission, path
+):
+    """User 角色对**公开**课程调这四个只读接口，必须 403。
+
+    这是本工具最要命的越权面：课程的 read 权限对公开课程的任何登录用户都成立，
+    早先四个接口按 read 判，等于一个选了课的学生就能把全班姓名 / 成绩 / 学习记录
+    拉走。现在按 update 判，走的是真实的 RBAC，不 patch。
+    """
+    assert course.public is True and course.published is True
+    response = await student_client.get(
+        "/api/v1/ext/learning/courses/%s/%s?org_id=1" % (course.course_uuid, path)
+    )
+    assert response.status_code == 403
+
+
+async def test_student_cannot_trigger_fix_publish(student_client, course, activity):
+    """写操作同样拦住 —— 顺带证明两类接口现在是同一道门。"""
+    response = await student_client.post(
+        "/api/v1/ext/learning/courses/%s/lint/fix-publish?org_id=1" % course.course_uuid,
+        json={"confirm": True},
+    )
+    assert response.status_code == 403
+
+
+async def test_rbac_check_course_only_accepts_update(mock_request, db, regular_user, course):
+    """service 层直接调用也拦得住，且签名只允许 update。"""
+    from src.services.ext.learning.common import rbac_check_course
+
+    with pytest.raises(HTTPException) as excinfo:
+        await rbac_check_course(
+            mock_request, course.course_uuid, regular_user, "update", db
+        )
+    assert excinfo.value.status_code == 403
+
+
+async def test_course_owner_still_passes(mock_request, db, admin_user, course):
+    """正面用例：能改这门课的人照常放行，别把老师自己也挡了。"""
+    from src.services.ext.learning.common import rbac_check_course
+
+    assert (
+        await rbac_check_course(
+            mock_request, course.course_uuid, admin_user, "update", db
+        )
+        is True
+    )
+
+
+@pytest.fixture
+async def instructor_user(db, org, user_role):
+    """一个 Instructor 式的账号：能进后台，但只能改自己是作者的课。
+
+    权限形状照抄本地库里的内置 Instructor 角色（courses.action_update=false、
+    action_update_own=true、dashboard.action_access=true）。
+    """
+    from src.db.roles import Role, RoleTypeEnum
+    from src.db.user_organizations import UserOrganization
+    from src.db.users import PublicUser as PU
+
+    import copy
+
+    rights = copy.deepcopy(user_role.rights)
+    rights["courses"]["action_update"] = False
+    rights["courses"]["action_update_own"] = True
+    rights["dashboard"]["action_access"] = True
+    role = Role(
+        id=93,
+        name="Instructor-like",
+        description="",
+        rights=rights,
+        role_type=RoleTypeEnum.TYPE_GLOBAL,
+        role_uuid="role_instructor_like",
+        org_id=None,
+        creation_date=NOW,
+        update_date=NOW,
+    )
+    db.add(role)
+    await db.commit()
+
+    user = User(
+        id=93,
+        username="instructor",
+        first_name="Ins",
+        last_name="Tructor",
+        email="instructor@test.com",
+        password="hashed",
+        user_uuid="user_instructor",
+        creation_date=NOW,
+        update_date=NOW,
+    )
+    db.add(user)
+    await db.commit()
+    db.add(
+        UserOrganization(
+            user_id=user.id, org_id=org.id, role_id=role.id,
+            creation_date=NOW, update_date=NOW,
+        )
+    )
+    await db.commit()
+    return PU(
+        id=user.id, username=user.username, first_name=user.first_name,
+        last_name=user.last_name, email=user.email, user_uuid=user.user_uuid,
+    )
+
+
+async def test_instructor_needs_authorship_on_the_course(
+    mock_request, db, org, course, instructor_user
+):
+    """收紧到 update 的实际边界：Instructor 只有是这门课的作者时才放行。
+
+    这是本次改动唯一会影响正常教师的地方 —— 一个不是作者、也没被加成课程
+    维护者/贡献者的 Instructor，从此看不到这门课的成绩册。写成用例是为了让这个
+    取舍是显式的：宁可少给，也不能让选课的人拿到全班数据。
+    """
+    from src.db.resource_authors import (
+        ResourceAuthor,
+        ResourceAuthorshipEnum,
+        ResourceAuthorshipStatusEnum,
+    )
+    from src.services.ext.learning.common import rbac_check_course
+
+    # 还不是作者 —— 拒
+    with pytest.raises(HTTPException) as excinfo:
+        await rbac_check_course(
+            mock_request, course.course_uuid, instructor_user, "update", db
+        )
+    assert excinfo.value.status_code == 403
+
+    # 加成这门课的 CREATOR —— 放行
+    db.add(
+        ResourceAuthor(
+            resource_uuid=course.course_uuid,
+            user_id=instructor_user.id,
+            authorship=ResourceAuthorshipEnum.CREATOR,
+            authorship_status=ResourceAuthorshipStatusEnum.ACTIVE,
+            creation_date=NOW,
+            update_date=NOW,
+        )
+    )
+    await db.commit()
+    assert (
+        await rbac_check_course(
+            mock_request, course.course_uuid, instructor_user, "update", db
+        )
+        is True
+    )

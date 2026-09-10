@@ -125,13 +125,20 @@ async def rbac_check_course(
     request: Request,
     course_uuid: str,
     current_user: PublicUser | AnonymousUser | InternalUser | APITokenUser,
-    action: Literal["read", "update"],
+    action: Literal["update"],
     db_session: AsyncSession,
 ):
-    """课程级权限：调用者对这门课要有对应权限，否则 403。
+    """课程级权限：调用者必须**能改这门课**，否则 403。
 
     与上游 service 的写法一致（每个 service 自己定义 rbac_check，路由不判权限）。
-    """
+
+    **为什么读接口也判 update，不判 read**：本工具的每一个接口都会吐出学生姓名、
+    邮箱、成绩和学习记录。而课程的 `read` 权限门槛很低 —— 公开课程对组织里任何
+    登录用户都成立，绑定用户组的成员也算，也就是说按 read 判的话，一个只是选了这门课
+    的人就能把全班成绩拉走。「能改这门课的人」（作者 / 课程管理员 / Admin / Maintainer）
+    才是这些数据的正当读者，所以四个只读接口和 fix-publish 用的是同一道门。
+    参数保留成 Literal 只是为了把这个约束写死在类型里。"""
+
     if isinstance(current_user, InternalUser):
         return True
     await authorization_verify_if_user_is_anon(current_user.id)
