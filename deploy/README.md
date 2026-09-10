@@ -37,6 +37,8 @@ NAS 上的部署根目录是 `/volume1/docker/learnhouse`，compose 项目名 `l
 | `deploy/backup.sh` | `/volume1/docker/learnhouse/backup.sh` | 由 `/etc/crontab` 每日 02:00 触发 |
 | `deploy/deploy.sh` | 不上传，在本机跑 | 部署脚本（**骨架，未在生产跑过**），流程见 `DEPLOY.md` |
 | `deploy/DEPLOY.md` | 不上传 | 部署流程说明 |
+| `deploy/REHEARSAL.md` | 不上传 | 2026-09-10 演练记录，含查出的缺陷与尚未验到的项 |
+| `deploy/docker-compose.rehearsal.yml` | 不上传 | 演练栈的 override，生产不加载 |
 | `deploy/.env.example` | `/volume1/docker/learnhouse/.env` | **只有键名和非敏感值**，真实密钥永不进仓库 |
 | 无（不进仓库） | `/volume1/docker/learnhouse/data/content` | 课程图片/视频，体积大，靠 DSM 快照或 Hyper Backup |
 | 无（不再需要） | `/volume1/docker/learnhouse/patches/` | 见下面「patches 目录的去向」 |
