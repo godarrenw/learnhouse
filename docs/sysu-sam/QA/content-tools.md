@@ -146,9 +146,14 @@ bunx tsc --noEmit
 
 ## 3. 接口
 
-挂载前缀 `/ext/content`（由骨架代理在 `routers/ext/__init__.py` 里挂）。
-**教师身份闸是挂载时统一加的**，本模块的路由不再各自判角色；课程级权限落在
-上游 service 的 `check_resource_access`，越权拿不到 200。
+在骨架的 `routers/ext/__init__.py` 里注册为 `("content_tools", "/content")`，
+实际路径是 `/api/v1/ext/content/*`，六个接口挂载后都验过在。
+
+权限两道门。组织级用骨架的 `deps.require_teacher`（Admin / Maintainer /
+Instructor）——**它把 org_id 声明成 query 参数，所以这些接口调用方都要带
+`?org_id=<id>`**，漏了直接 422。课程级由业务层再收窄：建章节、建活动、写内容、
+传图片最终都会落到上游 service 的 `check_resource_access`，导出也在服务层显式
+查了一次 READ，越权拿不到 200。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -211,6 +216,24 @@ ext 段的写入口，这一层自动就活了，代码不用改。
 
 **渲染端确认**：`EmbedObjectsComponent.tsx` 对非 YouTube 地址是
 `src={embedUrl}` 原样透传，不做 URL 重建，所以虚拟助教链接 hash 里的讲稿不会被剪掉。
+
+### 工具页
+
+`components/SysuTools/tools/Content/ContentTools.tsx`，注册表里 key 是 `content`，
+`courseScoped: true`（选课下拉由路由页统一渲染，工具自己不再写一个）。
+
+内部四个分段用本地 state 而不是路由段：外层 Tab 条已经被「工具之间切换」占用，
+再嵌一层会让面包屑和命令面板都变复杂。
+
+| 分段 | 做什么 |
+|---|---|
+| 导入 Markdown | 拖拽或点选 zip，前端先挡掉非 zip 和超过 50 MB 的；结果摘要给三个数字，并**逐条列出**没还原的内容与需要人工确认的告警 |
+| 导出 Markdown | 下载压缩包，显示章节/文件/图片/提醒四个计数；页面上直接写明导出是有损的 |
+| 虚拟助教 | 选一个富文本内容页（视频、PDF、作业会被滤掉，本来也追加不了）→ 写讲稿 → 追加，结果里给预览链接和「已自动存了一版可以回滚」的说明 |
+| 说明 | 四条：编辑器粘贴、邀请码二维码、导入导出的边界、虚拟助教的原理 |
+
+导出和二维码这两个接口都要 Bearer token，所以不能 `window.open` 一个链接或者
+`<img src>` —— 那样带不了 header，会 401。一律 fetch 成 Blob / 文本再用。
 
 ### 邀请码二维码
 
@@ -285,7 +308,7 @@ skill 的 `export-md` 会把作业的题目和参考答案一起渲染成 Markdo
 - 本地预发环境上真起前后端，在编辑器里真粘一条 bilibili 链接，断言出现
   `blockEmbed`（playwright）。粘贴规则的**匹配条件**已有 12 条 bun 单测覆盖，
   但「真的插进了编辑器、真的压过了 Link 的 linkOnPaste」只能在浏览器里验
-- 工具页三个 Tab（导入 Markdown / 导出 Markdown / 虚拟助教）的端到端
+- 工具页四个分段（导入 / 导出 / 虚拟助教 / 说明）的端到端
 - 邀请码页二维码弹窗的端到端与截图
 - 虚拟助教追加到真页面后，学生端活动页里那个 iframe 真的能出声
 - 导入一门带真图片的课，确认图片在存储层落盘并在页面里显示
