@@ -16,9 +16,11 @@ import { resolveEmbedUrl } from '@services/ext/content'
  * 不含换行），且指向我们认识的视频站点。整段 `<iframe …>` 官方嵌入代码也认。
  * 其余情况一律 `return false`，交回给 TipTap 默认行为。
  *
- * 优先级必须高于 Link 扩展：Link 的 `linkOnPaste` 默认开着，会抢先把链接变成
- * 超链接文本。ProseMirror 按插件顺序问 handlePaste，TipTap 按扩展 priority 从高
- * 到低排插件，所以这里把 priority 抬到 1000（默认 100）。
+ * 优先级必须高于 Link 扩展。`@tiptap/extension-link` 自己声明的就是
+ * `priority: 1000`，和它打平的话按扩展数组顺序排，而 `getLinkExtension()` 在本扩展
+ * 前面，于是 Link 先被问到。它的 `linkOnPaste` 默认开着：**选区为空时它返回 false**
+ * （所以光标状态下粘贴能轮到我们），但**选中一段文字再粘链接时它会直接接管**，
+ * 把选中的文字变成超链接，我们就再也拿不到这次粘贴。所以这里取 1100。
  */
 
 const VIDEO_HOST_RE =
@@ -51,8 +53,8 @@ export function matchPastedVideo(raw: string): string | null {
 const SysuBilibiliPaste = Extension.create<SysuBilibiliPasteOptions>({
   name: 'sysuBilibiliPaste',
 
-  // 必须高于 Link（默认 100），否则 linkOnPaste 会先把链接吃掉
-  priority: 1000,
+  // 必须高于 Link 的 1000（打平会按数组顺序让 Link 先接管选中文字的粘贴）
+  priority: 1100,
 
   addOptions() {
     return {
@@ -156,8 +158,11 @@ const SysuBilibiliPaste = Extension.create<SysuBilibiliPasteOptions>({
             const text = event.clipboardData?.getData('text/plain')
             const source = matchPastedVideo(text || '')
             if (!source) return false
-            event.preventDefault()
-            return handleVideoPaste(source)
+            // preventDefault 放在 handleVideoPaste 之后：没登录 / 拿不到 org 时
+            // 它会返回 false，这次粘贴还要交回给默认行为
+            const handled = handleVideoPaste(source)
+            if (handled) event.preventDefault()
+            return handled
           },
         },
       }),

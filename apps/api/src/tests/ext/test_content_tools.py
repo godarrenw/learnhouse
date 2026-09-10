@@ -596,6 +596,8 @@ def test_二维码回读能拿回原文(text):
     与第三方 qrcode 库的逐格比对记录在 docs/sysu-sam/QA/content-tools.md。
     """
     matrix, version, mask = qrgen.make_matrix(text)
+    # 下面的解码器按版本 1–9 的 8 位长度字段写的，版本 10 起是 16 位
+    assert version <= 9
     assert _decode_qr(matrix, version, mask) == text
 
 

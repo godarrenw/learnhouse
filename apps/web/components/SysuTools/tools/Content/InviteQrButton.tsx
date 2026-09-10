@@ -2,7 +2,7 @@
 'use client'
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { QrCode, Download } from 'lucide-react'
+import { QrCode, Download, AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 
@@ -30,7 +30,7 @@ function InviteQrButton({ code, signupLink }: { code: string; signupLink: string
   const [open, setOpen] = React.useState(false)
 
   // 弹窗打开才去取，取回来 react-query 会缓存住，同一个邀请码再打开不用重发。
-  const { data: svg, isError } = useQuery({
+  const { data: svg, isError, refetch } = useQuery({
     queryKey: queryKeys.ext.content.qr(signupLink),
     queryFn: () => fetchQrSvg(signupLink, orgId as number, access_token),
     enabled: open && !!access_token && !!orgId,
@@ -69,7 +69,27 @@ function InviteQrButton({ code, signupLink }: { code: string; signupLink: string
       }
       dialogContent={
         <div className="flex flex-col items-center gap-4 py-2" data-testid="sysu-invite-qr-modal">
-          {!svg ? (
+          {isError ? (
+            // 出错了要给个出口，不然会一直转圈，用户只能把弹窗关掉
+            <div
+              className="h-[280px] flex flex-col items-center justify-center gap-3"
+              data-testid="sysu-invite-qr-error"
+            >
+              <div className="bg-gray-100 p-4 rounded-full">
+                <AlertTriangle className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-gray-400 text-sm font-medium">
+                {t('ext.tools.content.qr.error', { defaultValue: '二维码生成失败，请重试' })}
+              </p>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
+              >
+                {t('ext.common.retry', { defaultValue: '重试' })}
+              </button>
+            </div>
+          ) : !svg ? (
             <div className="h-[280px] flex items-center justify-center">
               <LearnHouseSpinner size={28} />
             </div>

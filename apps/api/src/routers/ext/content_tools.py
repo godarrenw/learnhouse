@@ -40,8 +40,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-#: 二维码内容上限。版本 10 / 等级 M 装得下 213 字节，留点余量给 UTF-8 多字节。
+#: 二维码内容上限。编码器最大到版本 10 / 等级 M，装得下 213 **字节**。
+#: 字符数上限只是第一道粗筛（一个汉字 3 字节，200 个汉字远超容量），
+#: 真正的判断在路由里按 UTF-8 字节数做，否则中文说明会莫名其妙 400。
 MAX_QR_TEXT_CHARS = 200
+MAX_QR_TEXT_BYTES = 213
 
 
 # ------------------------------------------------------------ 请求体
@@ -273,7 +276,8 @@ async def api_append_avatar(
     summary="生成 SVG 二维码",
     description=(
         "纯标准库编码器（byte 模式 / 纠错等级 M / 版本 1–10），"
-        "内容上限 %d 个字符。给邀请码页面把注册链接印成码用。" % MAX_QR_TEXT_CHARS
+        "内容上限 %d 个字节（中文一个字算 3 个）。给邀请码页面把注册链接印成码用。"
+        % MAX_QR_TEXT_BYTES
     ),
     responses={
         200: {"description": "SVG 文本", "content": {"image/svg+xml": {}}},
@@ -288,6 +292,11 @@ async def api_qr_svg(
     caption: str | None = Query(None, max_length=60, description="排在码图下方的说明文字"),
     current_user: PublicUser = Depends(require_teacher),
 ):
+    if len(text.encode("utf-8")) > MAX_QR_TEXT_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=("二维码最多装 %d 个字节（中文一个字算 3 个），当前是 %d 个。"
+                    % (MAX_QR_TEXT_BYTES, len(text.encode("utf-8")))))
     try:
         matrix, _version, _mask = qrgen.make_matrix(text)
         svg = qrgen.to_svg(matrix, scale=scale, caption=caption)
