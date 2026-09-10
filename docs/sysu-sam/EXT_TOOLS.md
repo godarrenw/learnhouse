@@ -274,6 +274,55 @@ await authorization_verify_based_on_roles_and_authorship(
 写操作的 service 函数开头**必须**做这道检查，**且必须传 org_id**——上游注释写明了
 这是防跨组织 IDOR 的。前端对应的判断是 `useCourseRights(courseuuid)`。
 
+**课程级那道用 `update` 还是 `read`：凡是会返回名单、成绩、他人提交内容这类
+「他人数据」的接口，哪怕它是只读的，也要按 `update` 判 —— 按「能改这个资源的人」
+判，而不是「能看这个资源的人」。** 理由：公开课程的 `read` 对任何登录用户都成立，
+按 `read` 判等于把全班数据开放给选了这门课的人。
+
+这不是理论风险。学情工具把判定改回 `read` 跑一遍新用例，四个只读接口对 User
+角色全部返回 200；改成 `update` 后 403（`test_learning.py`）。签到的
+`test_regular_user_cannot_read_records` 守的是同一个面。成绩册、缺交名单、
+学习进度、课程体检、查重结果、随堂测结果、版本历史都属于这一类。
+
+**一个要知道的副作用**：内置 Instructor 角色是 `courses.action_update=false` +
+`action_update_own=true`，所以 Instructor 只有在自己是这门课的作者/维护者/贡献者
+时才过得了这道门。帮别人代课又不在课程作者列表里的 Instructor 会被拦。这是有意
+的取舍；如果实际教学中太紧，要改的是**把代课老师加进课程作者列表**，而不是把
+判定放回 `read`。
+
+#### `require_teacher` 与 `verify_teacher`：两种形态怎么选
+
+`src/routers/ext/deps.py` 里同一套判定有两个入口，**判定逻辑完全相同**
+（都是查 `dashboard.action_access`），差别只在 `org_id` 从哪来：
+
+| | `require_teacher`（依赖形态） | `verify_teacher`（服务层调用） |
+|---|---|---|
+| 用法 | `Depends(require_teacher)` | `await verify_teacher(user, org_id, db_session)` |
+| `org_id` 来源 | 调用方在 query 里传 `?org_id=` | 服务端自己从资源反查 |
+| 适合 | 接口不带任何资源 id，组织是唯一上下文 | 接口带 `course_uuid` / `<资源>_uuid`，能反查出组织 |
+
+**怎么选：接口路径里已经有资源 id 的，用 `verify_teacher` 从资源反查组织；
+只有拿不到资源 id 时才用依赖形态让调用方传。**
+
+理由是让调用方传 `org_id` 会多出一个必须校验的自由变量。传进来的 `org_id`
+和资源实际所属的组织未必一致，服务端还得再比一次；漏了这一比，攻击者就能拿
+自己有教师权限的组织 id 去操作别的组织的资源——正是上游注释里反复强调的那个
+跨组织 IDOR。从资源反查则不存在这个自由度：组织是资源自己说了算的。
+
+签到是全部走反查的范例，两道门连着做（`src/services/ext/checkin/checkin.py`
+的 `rbac_check_teacher`）：
+
+```python
+await authorization_verify_if_user_is_anon(current_user.id)
+await verify_teacher(current_user, org_id, db_session)          # 组织级
+await authorization_verify_based_on_roles_and_authorship(       # 课程级
+    request, current_user.id, "update", course_uuid, db_session)
+```
+
+学情走的是依赖形态 + 服务层再核对课程属于该组织，两条路都可以，**关键是
+课程级那道不能漏，也不能用 read**。学生端可以另开一道更松的门（登录 + 是本组织
+成员即可），`org_id` 同样反查。
+
 ### 业务逻辑与模型
 
 - 逻辑放 `src/services/ext/<tool>.py`，路由层只做 HTTP 与依赖注入。
@@ -338,6 +387,18 @@ cd apps/e2e && bun run typecheck          # 必须 exit 0
 
 这条不能省：push 到 `sysu-sam` 会触发 `build-image.yml`，Dockerfile 里的
 `next build` 会跑 tsc，一个类型错误就是全组的镜像构建挂掉。
+
+**跑 web 的 tsc 之前，`apps/web/next-env.d.ts` 必须存在。** 它是 next 生成的、
+而且被 gitignore，所以干净 checkout 上没有；缺了会报 23 个
+`TS2307: Cannot find module 'public/xxx.png'`，全落在上游文件里，很容易被误判成
+自己的改动引入的。跑过一次 `next dev` 或 `next build` 就会有；也可以手工建：
+
+```
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+```
+
+镜像构建里 `next build` 自己会生成，所以 CI 不受影响，这纯粹是本地验证的前提。
 
 ### 前端 e2e
 
