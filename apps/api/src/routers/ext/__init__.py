@@ -26,6 +26,7 @@ from fastapi import APIRouter
 # 每加一个工具，在这里加一行。顺序即挂载顺序。
 SUBMODULES: Sequence[Union[str, Tuple[str, str]]] = [
     "health",
+    ("checkin", "/checkin"),
 ]
 
 ext_router = APIRouter()
