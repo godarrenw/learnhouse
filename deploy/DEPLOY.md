@@ -186,6 +186,27 @@ docker exec <db 容器> psql -U learnhouse -d learnhouse -t -A -c \
 `apps/api/migrations/versions/sam1checkin01_*.py` 那个迁移文件保留，它对已经在用
 alembic 的环境仍然有效，而且写成了幂等的，两条路径互不打架。
 
+### 5.6 重建 app 容器后必须一并重建 ssr-fwd
+
+`ssr-fwd` 用的是 `network_mode: "service:learnhouse-app"`，**它绑的是 app 容器的
+网络命名空间**。一旦 app 容器被 `--force-recreate` 重建，旧命名空间就没了，
+ssr-fwd 会僵在那儿：`docker ps` 显示 Up，但转发已经断了，而且 `docker compose
+restart ssr-fwd` 会直接报 `No such container: <旧容器 id>`，必须 `up -d
+--force-recreate`。
+
+**症状具有迷惑性**：对外 `/login` 返回 200（那是 nginx 直接给的静态壳），
+但容器日志里刷 `TypeError: fetch failed ... ECONNREFUSED` —— 服务端渲染
+按 `NEXT_PUBLIC_LEARNHOUSE_*` 里的地址打自己打不通，页面渲染不出表单。
+本地冒烟时表现为 playwright 找不到登录框。
+
+所以换镜像的标准动作是两个容器一起来：
+
+```sh
+docker compose up -d --force-recreate learnhouse-app ssr-fwd
+```
+
+生产同理（生产那条转发监听 8088）。
+
 ### 6. 健康检查 + 补丁校验
 
 重建后轮询，任何一项在超时内没通过就判失败：
