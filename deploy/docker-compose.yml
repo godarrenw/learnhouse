@@ -4,8 +4,13 @@ services:
   learnhouse-app:
     # 自建镜像：由本仓库 .github/workflows/build-image.yml 从 sysu-sam 分支源码构建
     # （linux/amd64，NAS 是 x86_64）。5 条补丁已在源码里，不再需要任何 bind-mount。
-    # 要钉死某次构建就换成 :sysu-sam-<sha7>；打 sysu-v* tag 时会额外出一个版本 tag。
-    image: ghcr.io/godarrenw/learnhouse:sysu-sam
+    # 钉死具体构建，不用浮动的 :sysu-sam —— 这样「线上跑的是哪个 commit」一眼可查，
+    # 回滚也只是换回上一个 tag。打 sysu-v* tag 时会额外出一个版本 tag。
+    # 本 tag 构建自 commit 831f7095，其后到 c985a003 的改动全是 docs/ 与 deploy/，
+    # 被 workflow 的 paths-ignore 挡掉没触发重建，所以它就是当前代码的产物。
+    # index digest: sha256:1bbf7e3d47f19f153c692615810455a028acb371af17c6362ebc8dac723dd6ac
+    # （2026-09-12 从 ghcr 取 manifest 核对过，平台 linux/amd64）
+    image: ghcr.io/godarrenw/learnhouse:sysu-sam-831f709
     container_name: learnhouse-app-nas
     restart: unless-stopped
     env_file:
