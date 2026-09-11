@@ -37,6 +37,9 @@ NAS 上的部署根目录是 `/volume1/docker/learnhouse`，compose 项目名 `l
 | `deploy/backup.sh` | `/volume1/docker/learnhouse/backup.sh` | 由 `/etc/crontab` 每日 02:00 触发 |
 | `deploy/deploy.sh` | 不上传，在本机跑 | 部署脚本（**骨架，未在生产跑过**），流程见 `DEPLOY.md` |
 | `deploy/DEPLOY.md` | 不上传 | 部署流程说明 |
+| `deploy/cf/*.sh` | 不上传，在本机跑 | Cloudflare 侧脚本（隧道 ingress、DNS 切换与回滚）。默认只预演，要 `CONFIRM=yes` 才动手。见 `cf/README.md` 与 `TUNNEL_RUNBOOK.md` |
+| `deploy/TUNNEL_RUNBOOK.md` | 不上传 | 隧道 + 媒体域名的上线手册 |
+| `deploy/TUNNEL_LOCAL_TEST.md` | 不上传 | nginx 媒体分流的本地验证记录 |
 | `deploy/REHEARSAL.md` | 不上传 | 2026-09-10 演练记录，含查出的缺陷与尚未验到的项 |
 | `deploy/docker-compose.rehearsal.yml` | 不上传 | 演练栈的 override，生产不加载 |
 | `deploy/.env.example` | `/volume1/docker/learnhouse/.env` | **只有键名和非敏感值**，真实密钥永不进仓库 |

@@ -11,6 +11,11 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { constructAcceptValue } from '@/lib/constants';
 import Modal from '@components/Objects/StyledElements/Modal/Modal'
 import { useTranslation } from 'react-i18next'
+/* --- SYSU-SAM --- */
+import { useCampusNetwork } from '@services/media/useCampusNetwork'
+import { useSignedMediaUrls } from '@services/media/useSignedMediaUrls'
+import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
+/* --- SYSU-SAM END --- */
 
 const SUPPORTED_FILES = constructAcceptValue(['pdf'])
 
@@ -34,6 +39,13 @@ function PDFBlockComponent(props: any) {
     : null
   const editorState = useEditorProvider() as any
   const isEditable = editorState.isEditable
+
+  /* --- SYSU-SAM --- */
+  // PDF 块在校外取不到（重媒体被分流到只在校园网可解析的域名），
+  // 而跨域 iframe 加载失败不触发事件，所以主动探一次。
+  // 只影响阅读态：编辑态（教师）在校内，仍然按原样渲染。
+  const campusNetwork = useCampusNetwork()
+  /* --- SYSU-SAM END --- */
 
   const handlePDFChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -74,17 +86,10 @@ function PDFBlockComponent(props: any) {
   const handleDownload = () => {
     if (!fileId) return;
 
-    const pdfUrl = getActivityBlockMediaDirectory(
-      org?.org_uuid,
-      course?.courseStructure.course_uuid,
-      blockObject.content.activity_uuid || props.extension.options.activity.activity_uuid,
-      blockObject.block_uuid,
-      fileId,
-      'pdfBlock'
-    );
-
+    /* --- SYSU-SAM: 下载走同一个签名地址，不要在这里重新拼一份未签名的 --- */
     const link = document.createElement('a');
     link.href = pdfUrl || '';
+    /* --- SYSU-SAM END --- */
     link.download = `document-${blockObject?.block_uuid || 'download'}.${blockObject?.content.file_format || 'pdf'}`;
     link.setAttribute('download', '');
     link.setAttribute('target', '_blank');
@@ -98,7 +103,7 @@ function PDFBlockComponent(props: any) {
     setIsModalOpen(true);
   };
 
-  const pdfUrl = blockObject ? getActivityBlockMediaDirectory(
+  const rawPdfUrl = blockObject ? getActivityBlockMediaDirectory(
     org?.org_uuid,
     course?.courseStructure.course_uuid,
     blockObject.content.activity_uuid || props.extension.options.activity.activity_uuid,
@@ -107,7 +112,26 @@ function PDFBlockComponent(props: any) {
     'pdfBlock'
   ) : null;
 
+  /* --- SYSU-SAM --- */
+  // 重媒体分流：PDF 块换成「媒体域名 + 限时签名」，未启用时原样返回。
+  // 下面所有用到 pdfUrl 的地方（iframe、展开弹窗）都自动跟着换。
+  const signedPdf = useSignedMediaUrls([rawPdfUrl])
+  const pdfUrl = rawPdfUrl ? signedPdf.get(rawPdfUrl) : null
+  /* --- SYSU-SAM END --- */
+
   useEffect(() => { }, [course, org])
+
+  /* --- SYSU-SAM --- */
+  if (!isEditable && blockObject && campusNetwork === 'unreachable') {
+    return (
+      <NodeViewWrapper className="block-pdf">
+        <div className="h-96 w-full overflow-hidden rounded-lg nice-shadow">
+          <CampusOnlyNotice variant="light" />
+        </div>
+      </NodeViewWrapper>
+    )
+  }
+  /* --- SYSU-SAM END --- */
 
   // View mode without PDF
   if (!isEditable && !blockObject) {

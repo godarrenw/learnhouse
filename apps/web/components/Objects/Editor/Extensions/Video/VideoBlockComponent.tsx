@@ -16,6 +16,9 @@ import { constructAcceptValue } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import Modal from '@components/Objects/StyledElements/Modal/Modal'
 import LearnHousePlayer from '@components/Objects/Activities/Video/LearnHousePlayer'
+/* --- SYSU-SAM --- */
+import { useSignedMediaUrls } from '@services/media/useSignedMediaUrls'
+/* --- SYSU-SAM END --- */
 import { useTranslation } from 'react-i18next'
 
 const SUPPORTED_FILES = constructAcceptValue(['webm', 'mp4'])
@@ -278,12 +281,19 @@ function VideoBlockComponent(props: ExtendedNodeViewProps) {
     ? getVideoBlockHlsMasterUrl(orgUuid, courseUuid, activityUuid, blockObject.block_uuid)
     : null
 
+  /* --- SYSU-SAM --- */
+  // 重媒体分流：视频块的 MP4 换成「媒体域名 + 限时签名」。
+  // HLS 不在重媒体白名单里（见 signer.py），所以只换 MP4 这一路。
+  const signedVideo = useSignedMediaUrls([mp4Url])
+  const signedMp4Url = mp4Url ? signedVideo.get(mp4Url) : null
+  /* --- SYSU-SAM END --- */
+
   // Adaptive HLS when ready (with the MP4 as fallback), else the progressive MP4.
-  const videoUrl = hlsMasterUrl || mp4Url
+  const videoUrl = hlsMasterUrl || signedMp4Url
   const playerProps = {
     src: videoUrl || '',
     isHls: !!hlsMasterUrl,
-    fallbackSrc: hlsMasterUrl && mp4Url ? mp4Url : undefined,
+    fallbackSrc: hlsMasterUrl && signedMp4Url ? signedMp4Url : undefined, /* SYSU-SAM: 回落源也用签名后的地址 */
     thumbnails:
       hlsReady && hlsMeta?.thumbnails?.url && blockObject && orgUuid && courseUuid && activityUuid
         ? {

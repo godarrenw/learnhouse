@@ -51,7 +51,24 @@ prod)
     echo "已有到 NAS 的 SSH 连接，等 10 秒…"; sleep 10; waited=$((waited+10))
   done
   export SSHPASS="$LH_NAS_PASSWORD"
-  SSH="sshpass -e ssh -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no ${NAS_USER}@${NAS_HOST}"
+  # 连接复用（ControlMaster）：整轮部署有 20 多处 remote/remote_sudo 调用，
+  # 各开一条 TCP 连接的话，这台 NAS 对短时间内重复建连会直接拒 —— 那会把「被拒」
+  # 误判成「部署失败」，而且可能发生在同步之后、健康检查之前的危险窗口里。
+  # 开了之后第一次调用建主连接，后续全部复用它，整轮部署**物理上只有一条 SSH**。
+  # 副作用：后续调用不再走认证，sshpass 形同虚设（无害）。
+  # ⚠️ 2026-09-12 尚未在真实 NAS 上验证过：准备验证时本机已离开校园网
+  #    （网段变成 172.20.10.x 的手机热点），NAS 完全不可达。第一次真部署时留意，
+  #    若连接复用有问题，去掉这三个 -o Control* 选项即可退回每次新建连接的老行为。
+  SSH_CTL="/tmp/lh-ssh-ctl-$$"
+  SSH="sshpass -e ssh -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no \
+       -o ControlMaster=auto -o ControlPath=${SSH_CTL} -o ControlPersist=300 \
+       ${NAS_USER}@${NAS_HOST}"
+  # 退出时收掉主连接，别把它留到 ControlPersist 超时
+  cleanup_ssh() {
+    [ -S "$SSH_CTL" ] || return 0
+    ssh -o ControlPath="$SSH_CTL" -O exit "${NAS_USER}@${NAS_HOST}" 2>/dev/null || true
+  }
+  trap cleanup_ssh EXIT
 
   # 密码一律用 herestring 喂 sudo，不要用管道（ssh 不读完 stdin，printf 会吃 SIGPIPE）
   remote()      { $SSH "$1" <<< "$LH_NAS_PASSWORD"; }

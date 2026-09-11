@@ -208,3 +208,68 @@ HEALTH_TIMEOUT=480 TARGET=prod ./deploy.sh
   第一次部署本身就是那次对齐。
 - 部署脚本要不要自己去 GitHub 查「这个 commit 的镜像构建成功了没」，
   而不是闷头 `pull` 一个可能还没推上去的 tag。
+
+---
+
+## Cloudflare Tunnel 之后：同步清单与重建规则的变化
+
+隧道改造（`TUNNEL_RUNBOOK.md`）给部署流程加了一个服务和一个 `.env` 键。
+**`deploy.sh` 的核心流程没有改**，但下面几点必须知道，否则第一次部署会漏掉 cloudflared。
+
+### `.env` 新增的键
+
+`.env` 从来不由脚本同步，这两个键要在 NAS 上手工加（对照 `.env.example` 末尾）：
+
+| 键 | 什么时候要 | 说明 |
+|---|---|---|
+| `CF_TUNNEL_TOKEN` | **当前不需要**（备用） | 隧道复用 NAS 上已有的 SZ_NAS，那个容器不在本 compose 里也不读这个 `.env`。只有将来要起独立隧道才填 |
+| `NEXT_PUBLIC_LEARNHOUSE_HEAVY_MEDIA_URL` | 阶段三（校外提示） | 只给前端探测校园网可达性用。**不要**和上游的 `NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL` 搞混，后者会把所有图片一起搬走 |
+
+`docker-compose config -q` 在 `CF_TUNNEL_TOKEN` 未设时给的是 warning 不是 error
+（本地用 compose v2 确认过），所以 `deploy.sh` 第 1 步的语法预检不会因为它没填而失败。
+
+compose 里那段（已注释的）备用 cloudflared 服务**刻意没有 `env_file: - .env`**：
+它是直面 CF 边缘的容器，灌整个 `.env` 等于把数据库密码、JWT 密钥、AI 与 Resend 的 key
+都塞进它的环境变量，而它一个都用不上。`${CF_TUNNEL_TOKEN}` 走的是 compose 自己的
+变量插值（读部署目录下的 `.env`），与 `env_file` 无关，已用 `docker compose config`
+验过插值仍生效。将来真要启用那段时，别把 `env_file` 加回去。
+
+### 隧道不在本 compose 里
+
+**学堂的隧道复用 NAS 上已经在跑的那个 cloudflared 容器**（隧道 SZ_NAS，
+id `f8b7e1c1-6077-4fc4-9a55-c4bc1678d325`，chat / wandb / overleaf 都走它）。
+它不属于 `learnhouse-nas` 这个 compose 项目，也不读部署目录的 `.env`。
+
+对部署流程的影响是：**没有影响**。`deploy.sh` 的 `SERVICES`、
+`HEALTHY_CONTAINERS`、同步清单一个都不用改，本 compose 里那段 cloudflared
+已经整段注释掉了（留作「将来要独立隧道」的备用）。
+
+要给隧道加 / 撤 learn 这条 ingress，走 `deploy/cf/` 下的脚本，那是 Cloudflare API
+操作，与 `deploy.sh` 是两条独立的线：
+
+```sh
+cd deploy/cf
+./tunnel-add-learn.sh                 # 预演，只读
+CONFIRM=yes ./tunnel-add-learn.sh     # 真改
+```
+
+隧道健康状态这样看（在 NAS 上，容器名 `intelligent_mayer`）：
+
+```sh
+sudo docker logs --tail 40 intelligent_mayer | grep 'Registered tunnel connection'
+```
+
+或者 Zero Trust → Networks → Tunnels 里 SZ_NAS 是不是 HEALTHY。
+
+> ⚠️ 那个容器用的是浮动 tag `cloudflared:latest`，客户端版本 2024.11.1。
+> **切换窗口期内不要对它做 `docker pull` 或重建** —— 它还扛着 chat / wandb /
+> overleaf 三个服务，重建会让那几个也断一下。
+
+### nginx 配置变成两个 server 块之后
+
+`extra/nginx.prod.conf` 现在是 learn + media 两个 server 块，
+顶部 `$media_split_enabled` 那一行是媒体分流的总闸（`off` = 行为与改造前完全一致）。
+「必须 `--force-recreate` 而不是 reload」这条铁律不变，理由也不变：单文件 bind-mount 钉的是 inode。
+
+`deploy.sh` 判断「受影响服务」的逻辑是「compose 或 extra 任何一处变了就重建 app + ssr-fwd + nginx」，
+改总闸落在 `extra/` 里，会被正确识别。

@@ -74,6 +74,19 @@ async def _check_content_access(
     - orgs/{uuid}/podcasts/{uuid}/episodes/{uuid}/...  → check podcast access
     - orgs/{uuid}/...                                  → org-level (public)
     """
+    # --- SYSU-SAM: 限时签名 URL ---
+    # 重媒体分流到只在校园网可解析的媒体域名后，LH_access 是 host-only cookie，
+    # 跟不过去；<video>/<iframe> 又发不出 Authorization 头。所以页面先用会话
+    # 换一个绑死单条路径的限时签名，媒体请求带签名来。
+    # 这里只做「把匿名换成签名里的那个人」，下面原有的课程 / 机构权限检查一字不改
+    # 地照常跑 —— **授权仍然在原处发生**。没带签名参数时本段等于不存在。
+    # 详见 src/services/ext/media_sign/__init__.py。
+    if request is not None:
+        from src.services.ext.media_sign.binding import resolve_signed_user
+
+        current_user = await resolve_signed_user(request, current_user, db_session)
+    # --- /SYSU-SAM ---
+
     parts = file_path.split('/')
 
     # Assignment submission files must be gated to the owner or an instructor —

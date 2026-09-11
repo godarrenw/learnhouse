@@ -358,3 +358,52 @@ export function getPodcastAudioStreamUrl(
 ) {
   return `${getApiUrl()}api/v1/stream/audio/${orgUUID}/${podcastUUID}/${episodeUUID}/${filename}`
 }
+
+/* --- SYSU-SAM --- */
+/**
+ * 「重媒体域名」支持（设计文档方案 B）。
+ *
+ * 视频 / PDF / 音频这类重媒体分流到只在校园网可解析的媒体域名，图片、缩略图、
+ * 头像等留在主域名 —— 校外用户页面完整，只有视频和讲义打不开。
+ *
+ * 这里只提供两个纯函数，上面所有 helper 一律不动（它们照旧生成主域名地址）。
+ * 换域与签名由 useSignedMediaUrls hook 完成，见
+ * services/media/useSignedMediaUrls.ts。**没配 HEAVY_MEDIA_URL 时这两个函数
+ * 不改变任何行为，hook 也不会发出任何请求。**
+ *
+ * ⚠️ 不要和上游的 NEXT_PUBLIC_LEARNHOUSE_MEDIA_URL 混淆：那是「所有 /content/
+ * 一刀切」的开关，设了以后课程封面、头像、机构 logo 会一起搬走，校外满页裂图。
+ */
+export function getHeavyMediaBase(): string | null {
+  const raw = getConfig('NEXT_PUBLIC_LEARNHOUSE_HEAVY_MEDIA_URL')
+  if (!raw || !String(raw).trim()) return null
+  const trimmed = String(raw).trim()
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
+}
+
+/**
+ * 这个 URL 路径算不算「重媒体」。
+ *
+ * ⚠️ 这份规则有三份拷贝，改一处必须改另外两处：
+ *   - apps/api/src/services/ext/media_sign/signer.py 的 _SIGNABLE_PATTERNS
+ *   - deploy/extra/nginx.prod.conf 顶部的 $media_path_hit
+ *   - 这里
+ * 后端是权威：它拒签的路径，前端换了域名也取不到。
+ *
+ * 刻意不含 imageBlock、缩略图、头像、学生提交文件、字幕 VTT、HLS、播客，
+ * 逐条理由见 signer.py。
+ */
+const HEAVY_MEDIA_PATTERNS: RegExp[] = [
+  /^\/api\/v1\/stream\/video\/[^/]+\/[^/]+\/[^/]+\/.+$/,
+  // /block/ 与 /block/audio/ 都落在这一条里
+  /^\/api\/v1\/stream\/block\/.+$/,
+  /^\/content\/orgs\/[^/]+\/courses\/[^/]+\/activities\/[^/]+\/(?:video|documentpdf)\/.+$/,
+  /^\/content\/orgs\/[^/]+\/courses\/[^/]+\/activities\/[^/]+\/dynamic\/blocks\/(?:pdfBlock|videoBlock|audioBlock)\/[^/]+\/.+$/,
+]
+
+export function isHeavyMediaPath(path: string): boolean {
+  if (!path || !path.startsWith('/')) return false
+  if (path.includes('..')) return false
+  return HEAVY_MEDIA_PATTERNS.some((p) => p.test(path))
+}
+/* --- SYSU-SAM END --- */

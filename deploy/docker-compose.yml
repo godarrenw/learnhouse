@@ -56,6 +56,68 @@ services:
       timeout: 10s
       retries: 3
 
+  # ===========================================================================
+  # 【备用方案，当前未启用】独立的 cloudflared 容器。
+  #
+  # 现状：NAS 上已经有一个在跑的 cloudflared 容器（SZ_NAS 隧道，
+  # id f8b7e1c1-6077-4fc4-9a55-c4bc1678d325），chat / wandb / overleaf 都走它，
+  # 配置是 CF 远程托管的（source=cloudflare）。learn.sysu-sam.com 直接复用它，
+  # 只要给它的 ingress 加一条指向 http://172.25.5.162:8088 即可
+  # —— **不需要新容器、不需要改本文件、不需要动 nginx**。
+  # 加 ingress 的脚本见 deploy/cf/tunnel-add-learn.sh，流程见 TUNNEL_RUNBOOK.md。
+  #
+  # 下面这一段整段注释掉，留着是为了「将来要一条独立于 SZ_NAS 的隧道」时
+  # 能直接启用（比如想把学堂的隧道和别人的服务隔离开、或 SZ_NAS 要停用）。
+  # 启用时：取消注释 + 在 .env 填 CF_TUNNEL_TOKEN + docker-compose up -d cloudflared。
+  # ===========================================================================
+  # cloudflared —— Cloudflare Tunnel 出站连接器（阶段一新增）
+  #
+  # NAS 不需要任何公网入站端口：容器主动建立出站 443 连接到 CF 边缘，
+  # 用户流量由 CF 沿这条连接回灌到 learnhouse-nginx-nas:80。
+  #
+  # token 里已经包含隧道 id 与凭据，**只写在 .env 的 CF_TUNNEL_TOKEN，不要写进本文件**
+  # （本文件入 git，.env 不入）。token 泄露等于把隧道交出去，泄露后到 Zero Trust
+  # 控制台 Refresh token 即可作废旧的。
+  #
+  # 版本钉死不用 latest：隧道断了要能确定是不是升级引入的。当前 tag 2026.9.0
+  # （2026-09-09 发布，多架构 manifest 含 amd64，NAS 是 x86_64）。
+  # 升级方式：改这里的 tag -> docker-compose pull cloudflared ->
+  #           docker-compose up -d --force-recreate cloudflared。
+  #
+  # 注意几件事：
+  #   - depends_on 只挂 nginx。nginx 重建后容器 IP 会变，但 cloudflared 每次新建
+  #     连接都会重新解析容器名，旧连接失败后自动重拨，几秒内自愈，
+  #     **通常不需要跟着重建**。只有 deploy 之后校外持续 502 才手工重建它。
+  #   - 没有 healthcheck（cloudflared 镜像里没有 shell 也没有 curl）。
+  #     **不要**把它加进 deploy.sh 的 HEALTHY_CONTAINERS，否则预检永远过不了。
+  #     验隧道状态看 `docker logs learnhouse-cloudflared-nas` 里的
+  #     "Registered tunnel connection"，或 Zero Trust 控制台的 HEALTHY 标记。
+  #   - Public hostname 的 Service 要填 http://learnhouse-nginx-nas:80，
+  #     **不要填 8088** —— 那是宿主机映射端口，容器网络里不存在。
+  # cloudflared:
+  #   image: cloudflare/cloudflared:2026.9.0
+  #   container_name: learnhouse-cloudflared-nas
+  #   restart: unless-stopped
+    # 刻意**不写 env_file: - .env**。cloudflared 是直面 CF 边缘的容器，
+    # 把整个 .env 灌进去等于让 POSTGRES_PASSWORD、JWT 密钥、AI / Resend 的 key
+    # 全部躺在它的环境变量里（docker inspect 就能看到），它一个都用不上。
+    # 下面 ${CF_TUNNEL_TOKEN} 走的是 compose 自己的变量插值（读部署目录的 .env），
+    # 与 env_file 无关，所以删掉 env_file 不影响 token 注入。
+    #
+    # token 用 TUNNEL_TOKEN 环境变量传而不是 --token 参数：
+    # 命令行参数会出现在宿主机的 ps 输出里。
+  #   environment:
+  #     - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+  #   command: tunnel --no-autoupdate run
+  #   depends_on:
+  #     nginx:
+  #       condition: service_healthy
+  #   networks:
+  #     - learnhouse-network-nas
+    # NAS 只有 4G 内存且在用 swap，给它设个上限免得意外吃内存。
+    # cloudflared 常驻约 20~40MB，256m 很宽松。
+  #   mem_limit: 256m
+
   ssr-fwd:
     image: alpine/socat:1.8.0.0
     container_name: learnhouse-ssr-fwd-nas

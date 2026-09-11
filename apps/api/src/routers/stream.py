@@ -123,6 +123,15 @@ async def _verify_course_activity_access(
     - Authenticated users can access courses they have permission to view
     - Activity must belong to the specified course
     """
+    # --- SYSU-SAM: 限时签名 URL ---
+    # 同 local_content.py 里的那段，理由见
+    # src/services/ext/media_sign/__init__.py。只换主语，不放宽任何检查：
+    # 下面的 ResourceAccessChecker 照常用换出来的这个用户跑一遍。
+    from src.services.ext.media_sign.binding import resolve_signed_user
+
+    current_user = await resolve_signed_user(request, current_user, db_session)
+    # --- /SYSU-SAM ---
+
     # Verify activity exists and belongs to the course
     activity_stmt = select(Activity).where(Activity.activity_uuid == activity_uuid)
     activity = (await db_session.execute(activity_stmt)).scalars().first()
