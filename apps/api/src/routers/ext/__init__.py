@@ -29,6 +29,7 @@ SUBMODULES: Sequence[Union[str, Tuple[str, str]]] = [
     ("learning", "/learning"),
     ("assign_tools", "/assign"),
     ("content_tools", "/content"),
+    ("checkin", "/checkin"),
 ]
 
 ext_router = APIRouter()

@@ -34,6 +34,10 @@
     "assign": {
       "description": "AI questions, pop quizzes, similarity checks, term reuse and version rollback",
       "keywords": "assignment,quiz,similarity,plagiarism,clone,term,version,rollback"
+    },
+    "checkin": {
+      "description": "Open a class check-in with a projected QR code and passcode",
+      "keywords": "check-in,checkin,attendance,roll call,qr"
     }
   },
   "common": {
@@ -395,6 +399,92 @@
         "confirm_title": "Restore this page?",
         "confirm_msg": "The page body will be replaced with the content of v{{n}}. The current draft is saved as a new version first, so this can be undone.",
         "error": "Could not restore the version"
+      }
+    },
+    "checkin": {
+      "title": "Class check-in",
+      "description": "Open a session, project the QR code and passcode, students scan or type it",
+      "status": {
+        "open": "Open",
+        "closed": "Closed"
+      },
+      "method": {
+        "qr": "Scan",
+        "code": "Passcode"
+      },
+      "banner": {
+        "title": "Check in to this class"
+      },
+      "tool": {
+        "course": "Course",
+        "no_courses": "No courses yet",
+        "pick_course": "Pick a course first",
+        "title_label": "Session title",
+        "default_title": "Class {{n}}",
+        "refresh_label": "Rotate every {{n}}s",
+        "start": "Start check-in",
+        "starting": "Starting…",
+        "started": "Check-in is open",
+        "start_error": "Could not start the session",
+        "present": "Project",
+        "export": "Export",
+        "exporting": "Exporting…",
+        "exported": "CSV downloaded",
+        "export_error": "Export failed",
+        "close": "Close",
+        "closing": "Closing…",
+        "closed": "Closed",
+        "close_error": "Could not close the session",
+        "close_title": "Close this session?",
+        "close_confirm": "Students can no longer check in. Existing records are kept.",
+        "empty": "No check-in sessions for this course yet",
+        "table": {
+          "title": "Session",
+          "status": "Status",
+          "count": "Checked in",
+          "started": "Started",
+          "actions": "Actions"
+        }
+      },
+      "present": {
+        "title": "Class check-in",
+        "code_label": "Passcode",
+        "checked": "checked in",
+        "no_one_yet": "Nobody has checked in yet",
+        "hint": "Scan with your phone, or type the passcode on the course page",
+        "close": "Close check-in",
+        "closing": "Closing…",
+        "closed": "Check-in closed",
+        "close_error": "Could not close the session",
+        "close_title": "Close this session?",
+        "close_confirm": "Students can no longer check in. Existing records are kept.",
+        "session_closed": "This session is closed",
+        "load_error": "Could not load — refresh the page"
+      },
+      "student": {
+        "login_needed": "Sign in to check in",
+        "login_hint": "Check-in is tied to your account. You will come back here after signing in.",
+        "login": "Sign in",
+        "confirm": "Check in",
+        "submitting": "Checking in…",
+        "code_label": "Or type the passcode on screen",
+        "submit_code": "Check in",
+        "back_to_course": "Back to the course",
+        "check_link": "This QR code may have expired. Ask your teacher."
+      },
+      "result": {
+        "ok": "Checked in",
+        "already": "You already checked in",
+        "closed": "This session is closed"
+      },
+      "error": {
+        "already_checked_in": "You already checked in.",
+        "invalid_or_expired_code": "That passcode expired or is wrong. Check the screen for the current one.",
+        "session_closed": "This session is already closed.",
+        "session_not_found": "No such check-in session",
+        "not_org_member": "You are not a member of this organization.",
+        "rate_limited": "Too fast — wait a second and try again.",
+        "unknown": "Check-in failed. Please try again."
       }
     }
   }

@@ -13,7 +13,7 @@
  * 详见 `docs/sysu-sam/EXT_TOOLS.md`。
  */
 import { lazy } from 'react'
-import { Activity, ClipboardPen, FileText, GraduationCap, LayoutGrid } from 'lucide-react'
+import { Activity, ClipboardPen, FileText, GraduationCap, LayoutGrid, UserCheck } from 'lucide-react'
 
 import type { SysuTool, SysuToolRole } from './types'
 
@@ -60,6 +60,15 @@ export const SYSU_TOOLS: SysuTool[] = [
     descKey: 'ext.tools.assign.description',
     icon: ClipboardPen,
     component: lazy(() => import('./tools/assign/AssignTools')),
+    minRole: 'instructor',
+    courseScoped: true,
+  },
+  {
+    key: 'checkin',
+    titleKey: 'ext.tools.checkin.title',
+    descKey: 'ext.tools.checkin.description',
+    icon: UserCheck,
+    component: lazy(() => import('./tools/checkin/CheckinTool')),
     minRole: 'instructor',
     courseScoped: true,
   },

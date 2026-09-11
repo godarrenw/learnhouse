@@ -28,6 +28,9 @@ import CourseCommunitySection from '@components/Objects/Communities/CourseCommun
 import CourseShare from '@components/Objects/Courses/CourseShare/CourseShare'
 import { JsonLd } from '@components/SEO/JsonLd'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
+/* --- SYSU-SAM: 上课签到入口 --- */
+import CheckinBanner from '@components/SysuCheckin/CheckinBanner'
+/* --- /SYSU-SAM --- */
 
 const CourseClient = (props: any) => {
   const { t } = useTranslation()
@@ -340,6 +343,9 @@ const CourseClient = (props: any) => {
       {!course || !org ? null : (
         <>
           <GeneralWrapperStyled>
+            {/* --- SYSU-SAM: 上课签到入口 --- */}
+            <CheckinBanner orgslug={orgslug} courseUuid={course.course_uuid} />
+            {/* --- /SYSU-SAM --- */}
             <div className="pb-4">
               <Breadcrumbs items={[
                 { label: t('courses.courses'), href: getUriWithOrg(orgslug, '/courses'), icon: <BookCopy size={14} /> },
