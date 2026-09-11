@@ -119,6 +119,14 @@ esac
 # 在部署目录里跑 compose 的统一入口，两个模式共用
 dc() { remote_sudo "cd ${DEPLOY_DIR} && ${DC} -p ${COMPOSE_PROJECT} ${DC_FILES} $*"; }
 
+# 跑 docker 的统一入口。**必须走 remote_sudo**：生产 NAS 上 SAM-IPA518 没有
+# docker.sock 的权限，不加 sudo 的 `docker inspect` 会直接失败，而调用处大多写了
+# `|| echo missing` / `|| true`，失败会被悄悄吞掉 —— 表现为「五个容器全部 missing」，
+# 而它们其实好好跑着。2026-09-12 第一次真部署就是栽在这里（预检直接中止，
+# 好在中止发生在任何写操作之前，生产没被碰到）。
+# 本机演练模式下 remote_sudo 就是 bash -c，不需要提权，行为不变。
+dk() { remote_sudo "${DOCKER} $*"; }
+
 # 在**仓库 deploy/ 目录**里跑 compose config。
 # compose 里写了 env_file: .env，而仓库里没有 .env（含密钥，不入库），
 # 直接跑会因为找不到 .env 报错，所以用一个临时空 .env 顶一下再删掉。
@@ -163,11 +171,11 @@ fi
 check_containers() {   # 打印不健康的容器名，全好则无输出
   local c st
   for c in $HEALTHY_CONTAINERS; do
-    st=$(remote "${DOCKER} inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' ${c} 2>/dev/null" || echo missing)
+    st=$(dk "inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' ${c} 2>/dev/null" || echo missing)
     [ "$st" = healthy ] || echo "${c}=${st}"
   done
   for c in $RUNNING_CONTAINERS; do
-    st=$(remote "${DOCKER} inspect -f '{{.State.Status}}' ${c} 2>/dev/null" || echo missing)
+    st=$(dk "inspect -f '{{.State.Status}}' ${c} 2>/dev/null" || echo missing)
     [ "$st" = running ] || echo "${c}=${st}"
   done
 }
@@ -260,10 +268,10 @@ else
   IMG=$(printf '%s\n' "$CFG" | awk '/learnhouse-app:/{f=1} f&&/image:/{print $2; exit}')
   [ -n "$IMG" ] || die "从 compose config 里取不到 app 镜像名"
   log "演练镜像：${IMG}"
-  remote "${DOCKER} image inspect ${IMG} >/dev/null 2>&1" \
+  dk "image inspect ${IMG} >/dev/null 2>&1" \
     || die "本机没有镜像 ${IMG}（演练不重建镜像，请先 docker build 或换 tag）"
 fi
-OLD_IMG=$(remote "${DOCKER} inspect --format '{{.Image}}' ${APP} 2>/dev/null" || true)
+OLD_IMG=$(dk "inspect --format '{{.Image}}' ${APP} 2>/dev/null" || true)
 log "当前 app 镜像层：${OLD_IMG:-未知}"
 
 # ==== 4. 同步配置 ============================================================
@@ -312,7 +320,7 @@ fi
 # 但要验「新镜像里补丁是不是真的编进去了」。完整说明见 docs/sysu-sam/PATCHES.md。
 if [ "$ok" = 1 ]; then
   log "校验镜像内补丁…"
-  PATCHCHK=$(remote "${DOCKER} exec ${APP} sh -c \"
+  PATCHCHK=$(dk "exec ${APP} sh -c \"
       grep -c 'PATCH(nas)' /app/api/src/services/ai/courseplanning.py;
       grep -c 'images/generations' /app/api/src/services/ai/image/generator.py;
       grep -c '登录先进智造学堂' /app/api/src/services/auth/magic_login.py;
@@ -356,6 +364,6 @@ if [ "$ok" != 1 ]; then
 fi
 
 # ==== 8. 记录 ================================================================
-NEW_IMG=$(remote "${DOCKER} inspect --format '{{.Image}}' ${APP} 2>/dev/null" || true)
+NEW_IMG=$(dk "inspect --format '{{.Image}}' ${APP} 2>/dev/null" || true)
 remote "printf '%s\n' \"\$(date '+%F %T')  OK  target=${TARGET}  commit=${COMMIT}  services=${SERVICES}  image=${NEW_IMG}  backup=${ROLLBACK}  健康检查与补丁校验均通过\" >> ${DEPLOY_DIR}/deploy.log"
 log "部署成功，已记入 ${DEPLOY_DIR}/deploy.log"
