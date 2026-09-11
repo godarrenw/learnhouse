@@ -56,9 +56,13 @@ prod)
   # 误判成「部署失败」，而且可能发生在同步之后、健康检查之前的危险窗口里。
   # 开了之后第一次调用建主连接，后续全部复用它，整轮部署**物理上只有一条 SSH**。
   # 副作用：后续调用不再走认证，sshpass 形同虚设（无害）。
-  # ⚠️ 2026-09-12 尚未在真实 NAS 上验证过：准备验证时本机已离开校园网
-  #    （网段变成 172.20.10.x 的手机热点），NAS 完全不可达。第一次真部署时留意，
-  #    若连接复用有问题，去掉这三个 -o Control* 选项即可退回每次新建连接的老行为。
+  # 2026-09-12 已在真实 NAS 上验证：6 次连续只读调用全部成功，且 6 次落在同一秒内
+  #   （每次新建连接光密码认证就要 1s 上下，这个速度只有复用才可能），
+  #   `ssh -O check` 确认主连接存在，`-O exit` 干净关闭，无残留。
+  # 若哪天复用出问题，去掉这三个 -o Control* 选项即可退回每次新建连接的老行为。
+  # 注意：remote() 里是 `$SSH "$1"`，依赖 bash 的按空格分词。本脚本 shebang 是 bash，
+  #   没问题；但**不要**在 zsh 里手工 source 这些片段 —— zsh 默认不对未加引号的
+  #   变量做分词，整个字符串会被当成一个命令名，报 "no such file or directory"。
   SSH_CTL="/tmp/lh-ssh-ctl-$$"
   SSH="sshpass -e ssh -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no \
        -o ControlMaster=auto -o ControlPath=${SSH_CTL} -o ControlPersist=300 \
