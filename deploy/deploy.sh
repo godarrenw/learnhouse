@@ -17,6 +17,13 @@ REPO_DEPLOY_DIR="$PWD"
 
 TARGET="${TARGET:-prod}"
 DRY_IMAGE="${DRY_IMAGE:-}"          # 演练用：强行把 app 镜像改成这个 tag（验回滚）
+# 健康检查总超时（秒）。默认 240s 是按生产 start_period 180s 留的余量。
+# 冷启要跑 SQLModel.metadata.create_all 建新表时会更慢，这台 NAS 只有 4G 内存
+# 且在用 swap，必要时调大（只改调用时的环境变量，别改这里的默认值）：
+#   HEALTH_TIMEOUT=480 TARGET=prod ./deploy.sh
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-240}"
+# 预检等待容器稳定的超时，比健康检查短：这时只是等上一次操作的余波散去。
+PREFLIGHT_TIMEOUT="${PREFLIGHT_TIMEOUT:-120}"
 
 die() { echo "[部署中止] $*" >&2; exit 1; }
 log() { echo "[$(date +%F' '%H:%M:%S)] $*"; }
@@ -27,7 +34,7 @@ prod)
   NAS_USER=SAM-IPA518
   NAS_HOST=172.25.5.162
   DEPLOY_DIR=/volume1/docker/learnhouse
-  DC=/usr/local/bin/docker-compose        # 生产是 compose v1，没有 `docker compose`
+  DC=/usr/local/bin/docker-compose        # ContainerManager 的软链，实测 v2.20.1（不是 v1）
   DOCKER=/usr/local/bin/docker
   DC_FILES="-f docker-compose.yml"
   COMPOSE_PROJECT=learnhouse-nas
@@ -160,7 +167,7 @@ if [ "${SKIP_PREFLIGHT_HEALTH:-0}" != 1 ]; then
   # 给 120s 缓冲：上一次操作刚重建过容器时会短暂处于 starting，那不算「坏」。
   # 到点还没稳定成 healthy 才拒绝部署 —— 本来就不健康时不要部署，
   # 否则事后分不清是部署引入的还是原本就坏的。
-  if BAD=$(wait_containers 120); then log "预检：五个容器都正常"
+  if BAD=$(wait_containers "$PREFLIGHT_TIMEOUT"); then log "预检：五个容器都正常"
   else die "部署前就有容器不健康，先修好再部署：${BAD}"; fi
 fi
 
@@ -256,11 +263,13 @@ dc "up -d --force-recreate ${SERVICES}" || { recreate_ok=0; log "重建命令返
 # ==== 6. 健康检查 ============================================================
 # 轮询必须在**一条** SSH 连接里做完。这台 NAS 对短时间内重复建连会直接拒，
 # 48 次各开一条连接必然中途被拒，把「被拒」误判成「部署失败」。
-# app 冷启要跑迁移，48×5s=240s（生产 start_period 是 180s）。
-log "健康检查（HTTP）…"
+# app 冷启要跑 create_all 建新表（生产 start_period 是 180s，默认总超时 240s）。
+# 轮询次数 = 总超时 / 5s，至少 1 次。必须在下面 log 之前算出来。
+POLL_TRIES=$(( HEALTH_TIMEOUT / 5 )); [ "$POLL_TRIES" -ge 1 ] || POLL_TRIES=1
+log "健康检查（HTTP，总超时 ${HEALTH_TIMEOUT}s，共 ${POLL_TRIES} 轮）…"
 ok=0
 # --noproxy '*'：NAS 上没有代理无所谓，本机演练时系统代理会劫持 127.0.0.1，必须绕开
-POLL="for i in \$(seq 1 48); do
+POLL="for i in \$(seq 1 ${POLL_TRIES}); do
    c=\$(curl -s --noproxy '*' ${BASE}/api/v1/orgs/slug/default || true);
    h=\$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' ${BASE}/ || true);
    case \"\$c\" in *'\"slug\":\"default\"'*) sc=1;; *) sc=0;; esac;
@@ -273,8 +282,8 @@ if [ "$recreate_ok" = 1 ] && remote "$POLL" 2>/dev/null | grep -q HEALTHY; then 
 
 # 容器状态：四个带 healthcheck 的要 healthy，ssr-fwd 只看 running
 if [ "$ok" = 1 ]; then
-  log "健康检查（容器状态，最多等 240s）…"
-  if BAD=$(wait_containers 240); then log "五个容器状态正常"; else ok=0; log "容器状态异常：${BAD}"; fi
+  log "健康检查（容器状态，最多等 ${HEALTH_TIMEOUT}s）…"
+  if BAD=$(wait_containers "$HEALTH_TIMEOUT"); then log "五个容器状态正常"; else ok=0; log "容器状态异常：${BAD}"; fi
 fi
 
 # ==== 6b. 镜像内补丁校验（换镜像的部署必做）==================================
@@ -312,7 +321,7 @@ if [ "$ok" != 1 ]; then
   log "回滚后复跑健康检查…"
   rb=0
   if remote "$POLL" 2>/dev/null | grep -q HEALTHY; then
-    if BAD=$(wait_containers 240); then rb=1; else log "回滚后容器仍异常：${BAD}"; fi
+    if BAD=$(wait_containers "$HEALTH_TIMEOUT"); then rb=1; else log "回滚后容器仍异常：${BAD}"; fi
   fi
   write_log() { :; }
   if [ "$rb" = 1 ]; then

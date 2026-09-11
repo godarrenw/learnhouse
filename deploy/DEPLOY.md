@@ -50,10 +50,29 @@ TARGET=local ./deploy.sh    # 部署到本机演练栈，用于验证脚本本�
 
 3. **NAS 上的 `patches/` 不要删。** 它是回滚保险，见下面「失败回滚」一节。
 
-4. 跑 `TARGET=prod ./deploy.sh`，全程盯着，重点看 `REHEARSAL.md` 末尾
+4. 跑 `TARGET=prod ./deploy.sh`（冷启偏慢就 `HEALTH_TIMEOUT=480`），全程盯着，重点看 `REHEARSAL.md` 末尾
    「还没验到的」那六项 —— 尤其是 `docker-compose pull` 的耗时，
    以及健康检查 240s 在这台 4G 内存且在用 swap 的 NAS 上够不够
-   （生产 `start_period` 是 180s，冷启要跑迁移）。
+   （生产 `start_period` 是 180s）。
+
+5. **带新表的功能，部署后查表是否建出来 —— 不要碰 alembic。**
+   这个部署的建表走的是应用启动时的 `SQLModel.metadata.create_all`
+   （`apps/api/src/core/events/database.py:398`），**不是 alembic**：
+   2026-09-11 预检确认生产库根本没有 `alembic_version` 表，却有 61 张业务表。
+   对这样一个库跑 `alembic upgrade head` 会从零重放 69 个迁移，
+   轻则全部报「表已存在」，重则执行到破坏性操作。
+
+   ```sh
+   docker exec learnhouse-db-nas psql -U learnhouse -d learnhouse -At \
+     -c "select table_name from information_schema.tables
+         where table_schema='public' and table_name ilike '%<新表关键字>%';"
+   ```
+
+   有输出即成功。为空就去看 app 启动日志里 `create_all` 报了什么，然后回滚，
+   **不要**用 alembic 去「补」。
+
+   ⚠️ `create_all` 只建**新表**，不会给已有表加列。若改动涉及修改现有表结构，
+   这条路走不通，要单独评估。
 
 ## 基本约定
 
@@ -134,9 +153,10 @@ inode。`tar` 解包是「写新文件替换旧文件」，新文件是新 inode
   （连带 `ssr-fwd`，它是 `network_mode: service:learnhouse-app`，app 一重建它必须跟着重建）
 - 改了 db/redis 段落 → 单独确认，这两个动一次风险高得多，不要顺手带上
 
-生产上的命令是 **`docker-compose`（v1）**，不是 `docker compose`。
-已确认：`/usr/local/bin/docker-compose` 是指向 ContainerManager 的软链，
-而 `docker compose` 子命令在这台机器上不存在。
+生产上用 **`/usr/local/bin/docker-compose`**（ContainerManager 提供的软链）。
+2026-09-11 预检实测它是 **v2.20.1**，不是早先以为的 v1 —— `-p` / `-f` 都照常吃。
+注意 v2.20 **不支持 `!override`**（该标签要 ≥ 2.24），生产这份 compose 里不要用它
+（只有演练用的 `docker-compose.rehearsal.yml` 用到，生产不加载那个文件）。
 
 ### 6. 健康检查 + 补丁校验
 
@@ -146,7 +166,15 @@ inode。`tar` 解包是「写新文件替换旧文件」，新文件是新 inode
 - `GET http://127.0.0.1:8088/` → 200
 - `docker-compose ps` 里五个容器都 healthy
 
-app 冷启要跑迁移，超时给到 240s（生产 `start_period` 是 180s）。
+app 冷启要跑建表，默认总超时 240s（生产 `start_period` 是 180s）。
+这台 NAS 只有 4 GB 内存且在用 swap，第一次带新表的部署可能不够，
+用环境变量临时调大即可，**不要改脚本里的默认值**：
+
+```sh
+HEALTH_TIMEOUT=480 TARGET=prod ./deploy.sh
+```
+
+（预检等待容器稳定另有 `PREFLIGHT_TIMEOUT`，默认 120s。）
 
 **换镜像的部署还要多跑一次补丁校验**，命令见 `../docs/sysu-sam/PATCHES.md`。
 这一步替代了老流程里的「确认前端 chunk 挂载点文件名是否还在」——
