@@ -158,6 +158,34 @@ inode。`tar` 解包是「写新文件替换旧文件」，新文件是新 inode
 注意 v2.20 **不支持 `!override`**（该标签要 ≥ 2.24），生产这份 compose 里不要用它
 （只有演练用的 `docker-compose.rehearsal.yml` 用到，生产不加载那个文件）。
 
+### 5.5 新表是怎么建出来的（教学工具带了两张新表）
+
+**这套部署不跑 alembic。** 生产库里没有 `alembic_version` 表，建表靠 app 启动时的
+`SQLModel.metadata.create_all`（`apps/api/src/core/events/database.py:398`）。
+所以部署带新表的版本时，**不需要也不应该手工跑 `alembic upgrade`** —— 起容器就够了。
+
+签到的 `checkin_session` / `checkin_record` 两张表已经按这条路径验过：在本地栈上
+把三张表（两张业务表 + `alembic_version`）全删掉、完整复现生产的初始状态，
+再启动 app，两张表连同六个索引和唯一约束都被自动建出，签到 e2e 9 条全过。
+详见 `docs/sysu-sam/QA/checkin.md` 末节。
+
+**这条路径有个前提要守住**：`create_all` 只建它在 `SQLModel.metadata` 里见过的表，
+模型必须在 `create_all` 之前被 import 到。签到是经
+`routers/ext/__init__.py` → `routers/ext/checkin.py` → `from src.db.ext.checkin import ...`
+这条链进去的。**以后再加新表，务必确认模型在这条 import 链上**，否则表建不出来，
+而且启动日志不会报错 —— 要等到第一次读写那张表才 500。
+
+部署后的自查（应返回 2）：
+
+```sh
+docker exec <db 容器> psql -U learnhouse -d learnhouse -t -A -c \
+  "select count(*) from information_schema.tables
+   where table_name in ('checkin_session','checkin_record');"
+```
+
+`apps/api/migrations/versions/sam1checkin01_*.py` 那个迁移文件保留，它对已经在用
+alembic 的环境仍然有效，而且写成了幂等的，两条路径互不打架。
+
 ### 6. 健康检查 + 补丁校验
 
 重建后轮询，任何一项在超时内没通过就判失败：

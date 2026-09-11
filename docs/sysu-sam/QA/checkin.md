@@ -335,3 +335,49 @@ await authorization_verify_based_on_roles_and_authorship(       # 课程级
 用 `read` 判会让学生拉到全班名单和 IP（`test_regular_user_cannot_read_records`
 就是为这个写的）。**凡是会返回名单、成绩、IP 这类他人数据的只读接口，都要按
 「能改这个资源的人」判，而不是「能看这个资源的人」。**
+
+---
+
+## 建表路径验证：生产走 create_all，不走 alembic（集成代理，2026-09-12）
+
+生产预检发现**生产库没有 `alembic_version` 表**，也就是说这套部署从来没跑过
+alembic —— 建表走的是 app 启动时的 `SQLModel.metadata.create_all`
+（`src/core/events/database.py:398`）。签到的迁移 `sam1checkin01` 在生产那条路径
+上根本不会执行。
+
+所以真正要验的不是「迁移能不能跑」，而是**「两张表能不能被 create_all 自动建出」**。
+`create_all` 只建它在 `SQLModel.metadata` 里见过的表，而模型要进 metadata，
+必须在 `create_all` 之前被 import 到。
+
+### 怎么验的
+
+在本地栈上把生产状态完整复现出来，而不是只删表：
+
+```sh
+drop table if exists checkin_record cascade;
+drop table if exists checkin_session cascade;
+drop table if exists alembic_version;      -- 关键：生产没有这张表
+```
+
+然后直接启动 app（不跑 alembic），查 `information_schema`。
+
+### 结果：两张表被自动建出，功能可用
+
+| 检查项 | 结果 |
+| --- | --- |
+| `checkin_session` / `checkin_record` | 都建出来了 |
+| 字段 | 与模型一致（session_uuid、org_id、course_id、created_by、status、secret、started_at、closed_at 等） |
+| 索引 | 六个全在：两个主键、`ix_checkin_session_session_uuid`、`ix_checkin_session_org_id`、`ix_checkin_session_course_id`、`ix_checkin_session_course_status`、`ix_checkin_record_session` |
+| 唯一约束 | `uq_checkin_record_session_user` 在（同一账号一场只能签一次靠它） |
+| 签到 e2e | 9 条全过，跑在 create_all 建出来的表上 |
+
+不需要额外加显式 import：模型经
+`routers/ext/__init__.py` → `routers/ext/checkin.py` → `from src.db.ext.checkin import ...`
+这条链，在 `include_all()` 时就被导入了，而那发生在 `create_all` 之前。
+
+### 迁移文件仍然保留
+
+`sam1checkin01` 留着不删，它对「已经在用 alembic 的环境」仍然有效，而且写成了
+幂等的（`inspector.get_table_names()` 后条件建表），表已存在时会跳过。两条路径
+互不打架：生产走 create_all，其他环境走 alembic 都能得到同样的表。
+
