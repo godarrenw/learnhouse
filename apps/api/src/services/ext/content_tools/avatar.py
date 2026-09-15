@@ -31,7 +31,7 @@ GZIP_THRESHOLD = 4000
 #: 注意**前端读不到环境变量**，所以这个地址应当写进组织配置的 ext 段。
 CONFIG_KEY = "avatar_page_url"
 ENV_PAGE_URL = "LEARNHOUSE_EXT_AVATAR_PAGE_URL"
-#: 当前部署已经上线的地址（见 skill/reference/avatar.md「当前部署」一节）。
+#: 当前部署已经上线的地址。页面源码、构建和发布见 apps/avatar-page/README.md。
 DEFAULT_PAGE_URL = "https://blog.sysu-sam.com/@zhuyizhang/lh-avatar"
 
 _SENT_END = "。！？!?；;"

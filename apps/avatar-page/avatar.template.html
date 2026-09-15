@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>先进智造学堂 · 虚拟助教</title>
+<style>
+  :root{
+    --green:#007A3D; --green-soft:#e8f3ec; --green-line:#cfe4d7;
+    --ink:#1f2328; --ink-2:#5b6570; --ink-3:#94a0ac;
+    --bg:#fbfbfa; --card:#ffffff; --line:#e9e9e6;
+    --radius:16px;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-block:20px; padding-left:16px; padding-right:16px;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+        box-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);overflow:hidden}
+  header{padding:18px 22px 14px;border-bottom:1px solid var(--line);display:flex;
+         align-items:baseline;gap:10px;flex-wrap:wrap}
+  header .brand{font-size:12px;letter-spacing:.14em;color:var(--green);font-weight:600}
+  header h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.01em}
+  .stage{display:flex;gap:22px;padding:22px;align-items:flex-start;flex-wrap:wrap}
+  .avatarBox{flex:0 0 200px;margin:0 auto}
+  @media (max-width:560px){ .stage{padding:16px;gap:14px} .avatarBox{flex:0 0 100%} }
+  .face{position:relative;width:100%;max-width:200px;margin:0 auto;
+        aspect-ratio:1/1;border-radius:50%;overflow:hidden;background:#f2f6f3}
+  .face .head{position:absolute;inset:0;will-change:transform}
+  .face .frame{position:absolute;inset:0;width:100%;height:100%;display:block;
+               object-fit:cover;-webkit-user-select:none;user-select:none;
+               -webkit-user-drag:none;pointer-events:none}
+  .face .frame.open{opacity:0}
+  /* 眼皮：盖在眼睛上的一小块肤色，眨眼时从上往下压下来 */
+  .face .lid{position:absolute;top:32.2%;width:9.4%;height:4.9%;
+             background:linear-gradient(#fbcfad,#f7c49f);
+             border-bottom:1.5px solid #b98363;
+             border-radius:0 0 60% 60%/0 0 70% 70%;
+             transform:scaleY(0);transform-origin:top center;pointer-events:none}
+  .face .lidL{left:37.6%}
+  .face .lidR{left:53.5%}
+  .face.blink .lid{transform:scaleY(1)}
+  .statusPill{margin-top:8px;text-align:center;font-size:12px;color:var(--ink-3)}
+  .script{flex:1 1 320px;min-width:0}
+  .lines{max-height:300px;overflow-y:auto;padding-right:6px;margin:0;list-style:none}
+  .lines li{padding:7px 12px;border-radius:10px;color:var(--ink-2);cursor:pointer;
+            transition:background .18s,color .18s;border-left:3px solid transparent}
+  .lines li:hover{background:#f5f6f5}
+  .lines li.active{background:var(--green-soft);color:var(--ink);border-left-color:var(--green);font-weight:500}
+  .lines li.done{color:var(--ink-3)}
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+            padding:14px 22px;border-top:1px solid var(--line);background:#fcfcfb}
+  button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
+         padding:7px 16px;border-radius:999px;cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--green-line);color:var(--green)}
+  button.primary{background:var(--green);border-color:var(--green);color:#fff;font-weight:500}
+  button.primary:hover{background:#006934;color:#fff}
+  label.ctl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2)}
+  select,input[type=range]{font:inherit;font-size:13px}
+  select{border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:#fff;max-width:190px}
+  input[type=range]{width:96px;accent-color:var(--green)}
+  .note{padding:12px 22px 18px;font-size:12px;color:var(--ink-3);line-height:1.6}
+  .empty{padding:34px 26px}
+  .empty h2{font-size:16px;margin:0 0 10px}
+  .empty p{color:var(--ink-2);margin:0 0 10px}
+  .empty code{background:#f4f5f4;padding:2px 6px;border-radius:5px;font-size:12.5px}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme=light]){
+      --bg:#fbfbfa; --card:#ffffff;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <header>
+      <span class="brand">先进智造学堂</span>
+      <h1 id="title">虚拟助教</h1>
+    </header>
+
+    <div id="main" hidden>
+      <div class="stage">
+        <div class="avatarBox">
+          <div class="face" id="face" role="img" aria-label="虚拟助教头像">
+            <div class="head" id="head">
+              <img class="frame" id="frameClosed" src="__IMG_CLOSED__" alt="">
+              <img class="frame open" id="frameOpen" src="__IMG_OPEN__" alt="">
+              <span class="lid lidL"></span>
+              <span class="lid lidR"></span>
+            </div>
+          </div>
+          <div class="statusPill" id="status">点一下「开始讲解」</div>
+        </div>
+
+        <div class="script">
+          <ul class="lines" id="lines"></ul>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="play">开始讲解</button>
+        <button id="replay">重播</button>
+        <label class="ctl">语速 <input type="range" id="rate" min="0.6" max="1.6" step="0.1" value="1"><span id="rateVal">1.0</span></label>
+        <label class="ctl" id="voiceCtl">音色 <select id="voice"></select></label>
+      </div>
+      <div class="note" id="note">
+        首次播放需要你点一下按钮，这是浏览器对自动播放的限制。声音由云端合成，每句开头可能要等一小会儿；网络不通时会自动改用本机语音，本机也没有中文语音就切到无声字幕模式。
+      </div>
+    </div>
+
+    <div id="empty" class="empty">
+      <h2>还没有讲稿</h2>
+      <p>这个页面本身不存讲稿。讲稿被压缩后放在链接的 <code>#</code> 后面，所以每份讲解都是一条独立的长链接。</p>
+      <p>在 LearnHouse 的「内容工具 → 虚拟助教」里写讲稿，就会生成带讲稿的链接并嵌进内容页。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- 讲稿：从 URL hash 解码 ---------- */
+  function b64urlToBytes(s){
+    s = s.replace(/-/g,"+").replace(/_/g,"/");
+    while (s.length % 4) s += "=";
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function bytesToText(b){ return new TextDecoder("utf-8").decode(b); }
+
+  async function loadScriptData(){
+    var h = location.hash.replace(/^#/,"");
+    if (!h) return null;
+    var m = /(?:^|&)([sj])=([A-Za-z0-9\-_]+)/.exec(h);
+    if (!m) return null;
+    var bytes = b64urlToBytes(m[2]);
+    var text;
+    if (m[1] === "s"){
+      if (typeof DecompressionStream === "undefined")
+        throw new Error("这台设备的浏览器太旧，无法解压讲稿。请升级浏览器后再打开。");
+      var ds = new DecompressionStream("gzip");
+      var stream = new Blob([bytes]).stream().pipeThrough(ds);
+      text = bytesToText(new Uint8Array(await new Response(stream).arrayBuffer()));
+    } else {
+      text = bytesToText(bytes);
+    }
+    return JSON.parse(text);
+  }
+
+  /* ---------- DOM ---------- */
+  var $ = function(id){ return document.getElementById(id); };
+  var elLines=$("lines"), elPlay=$("play"), elReplay=$("replay"), elRate=$("rate"),
+      elRateVal=$("rateVal"), elVoice=$("voice"), elStatus=$("status"),
+      elFace=$("face"), elHead=$("head"), elOpen=$("frameOpen"), elTitle=$("title"),
+      elVoiceCtl=$("voiceCtl");
+
+  var lines = [];              // [{text, pause}]
+  var state = { mode:"idle", i:-1, mouth:0 };   // idle | speaking | paused | done
+  var engineKind = "none";     // remote | tts | silent | mock
+
+  /* ---------- 眨眼 ---------- */
+  function blink(){
+    elFace.classList.add("blink");
+    setTimeout(function(){ elFace.classList.remove("blink"); }, 105);
+    setTimeout(blink, 2400 + Math.random()*3400);
+  }
+  setTimeout(blink, 1800);
+
+  /* ---------- 嘴 + 点头 动画 ---------- */
+  var target = 0, current = 0, lastPulse = 0, t0 = performance.now();
+  function frame(now){
+    // 云端语音还在下载、没真正出声的时候，嘴别动
+    var speaking = (state.mode === "speaking") &&
+                   (engineKind !== "remote" || (!audio.paused && !audio.ended));
+    if (speaking && engineKind !== "mock"){
+      // 定时驱动：每 ~110ms 换一个张嘴幅度；boundary 事件只用来对齐节奏。
+      // mock 模式下关掉这个随机节拍，让测试脚本 fire 的事件成为唯一的驱动源。
+      if (now - lastPulse > 105){
+        lastPulse = now;
+        target = 0.25 + Math.random()*0.75;
+        if (Math.random() < 0.18) target = 0.05;   // 词间短闭合
+      }
+    } else if (!speaking){
+      target = 0;
+    }
+    current += (target - current) * 0.35;
+    state.mouth = current;
+    // 张嘴帧叠在闭嘴帧上，用不透明度做连续的口型过渡（两帧是同一张底图改的嘴）
+    elOpen.style.opacity = current.toFixed(3);
+    // 轻微点头
+    var t = (now - t0)/1000;
+    var amp = speaking ? 1 : 0.25;
+    elHead.style.transform =
+      "translateY(" + (Math.sin(t*2.1)*0.7*amp).toFixed(2) + "%) rotate(" +
+      (Math.sin(t*0.9)*0.7*amp).toFixed(2) + "deg)";
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function pulseMouth(){ lastPulse = 0; target = 0.35 + Math.random()*0.65; }
+
+  /* ---------- 字幕 ---------- */
+  function renderLines(){
+    elLines.innerHTML = "";
+    lines.forEach(function(ln, idx){
+      var li = document.createElement("li");
+      li.textContent = ln.text;
+      li.dataset.idx = idx;
+      li.addEventListener("click", function(){ jumpTo(idx); });
+      elLines.appendChild(li);
+    });
+  }
+  function markLine(idx){
+    Array.prototype.forEach.call(elLines.children, function(li, i){
+      li.classList.toggle("active", i === idx);
+      li.classList.toggle("done", i < idx);
+    });
+    var cur = elLines.children[idx];
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({block:"nearest", behavior:"smooth"});
+  }
+
+  /* ---------- 语音引擎 ---------- */
+  var synth = window.speechSynthesis || null;
+  var voices = [];
+  var PREFERRED = ["tingting","ting-ting","sinji","xiaoxiao","yunxi","yunyang","meijia","mei-jia","huihui","kangkang","google 普通话","chinese"];
+
+  function pickVoices(){
+    if (!synth) return;
+    var all = synth.getVoices() || [];
+    voices = all.filter(function(v){ return /^zh/i.test(v.lang || ""); });
+    if (!voices.length) voices = all.slice(0, 12);
+    voices.sort(function(a,b){
+      function score(v){
+        var n = (v.name||"").toLowerCase();
+        for (var i=0;i<PREFERRED.length;i++) if (n.indexOf(PREFERRED[i]) >= 0) return i;
+        return 99;
+      }
+      return score(a) - score(b);
+    });
+    var keep = elVoice.value;
+    elVoice.innerHTML = "";
+    voices.forEach(function(v, i){
+      var o = document.createElement("option");
+      o.value = String(i); o.textContent = v.name + (v.lang ? " · " + v.lang : "");
+      elVoice.appendChild(o);
+    });
+    if (!voices.length){
+      var o2 = document.createElement("option");
+      o2.textContent = "本机无可用语音（无声模式）"; elVoice.appendChild(o2);
+      elVoice.disabled = true;
+    } else {
+      elVoice.disabled = false;
+      var saved = null;
+      try { saved = localStorage.getItem("lh_avatar_voice"); } catch(e){}
+      if (keep && elVoice.querySelector('option[value="'+keep+'"]')) elVoice.value = keep;
+      else if (saved !== null){
+        for (var i=0;i<voices.length;i++) if (voices[i].name === saved) elVoice.value = String(i);
+      }
+    }
+  }
+  if (synth){
+    pickVoices();
+    synth.addEventListener && synth.addEventListener("voiceschanged", pickVoices);
+    if ("onvoiceschanged" in synth && !synth.addEventListener) synth.onvoiceschanged = pickVoices;
+  }
+
+  // 无声模式：按字数估时长，UI 与动画照常走，页面变成会动的提词器
+  function silentSpeak(text, cb){
+    var ms = Math.max(900, text.length * 210 / (parseFloat(elRate.value)||1));
+    var id = setTimeout(function(){ cb.end(); }, ms);
+    var b = setInterval(function(){ cb.boundary(); }, 260);
+    return function cancel(){ clearTimeout(id); clearInterval(b); };
+  }
+
+  /* ---------- 云端语音（Edge TTS 代理） ---------- */
+  // 默认值写在页面里，所有讲稿共用；讲稿 payload 里带 tts 字段时逐项覆盖。
+  // 这个 key 在页面源码里公开可见，只能放临时 key。
+  var TTS_DEFAULTS = {
+    url: "https://my-edge-tts-proxy.zhuyizhang0.workers.dev",
+    key: "samipaadmin",
+    voice: "zh-CN-XiaoshuangNeural"     // 晓双（儿童）
+  };
+  var tts = TTS_DEFAULTS;
+  var remoteOK = true;         // 云端失败一次，本次打开期间就改用本机语音
+  var audio = new Audio();
+  audio.preload = "auto";
+  var playGen = 0;             // 每次换句 / 暂停都 +1，迟到的音频据此作废
+  var clips = {};              // "音色|语速|文本" -> Promise<blob URL>
+
+  function remoteReady(){
+    return remoteOK && !!(tts.url && tts.key && tts.voice) && typeof fetch === "function";
+  }
+
+  // 0.1 秒静音 wav。Safari 要求 play() 同步发生在点击里，所以点击时先放它把
+  // <audio> 解锁，之后等网络回来再换 src 播放就不会被拦。
+  var SILENT_WAV = (function(){
+    var n = 800, b = new Uint8Array(44 + n), dv = new DataView(b.buffer);
+    function str(o, s){ for (var i=0;i<s.length;i++) b[o+i] = s.charCodeAt(i); }
+    str(0, "RIFF"); dv.setUint32(4, 36 + n, true); str(8, "WAVEfmt ");
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true);
+    dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+    str(36, "data"); dv.setUint32(40, n, true);
+    for (var i=0;i<n;i++) b[44+i] = 128;
+    return URL.createObjectURL(new Blob([b], {type:"audio/wav"}));
+  })();
+
+  function fetchClip(text){
+    var speed = parseFloat(elRate.value) || 1;
+    var k = tts.voice + "|" + speed + "|" + text;
+    if (!clips[k]){
+      clips[k] = fetch(tts.url.replace(/\/+$/, "") + "/v1/audio/speech", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + tts.key, "Content-Type": "application/json" },
+        body: JSON.stringify({ input: text, voice: tts.voice, speed: speed })
+      }).then(function(r){
+        if (!r.ok) throw new Error("语音服务返回 HTTP " + r.status);
+        return r.blob();
+      }).then(function(blob){
+        if (!blob.size) throw new Error("语音服务返回了空音频");
+        return URL.createObjectURL(blob);
+      });
+      clips[k].catch(function(){ delete clips[k]; });
+    }
+    return clips[k];
+  }
+
+  function remoteSpeak(idx, cb){
+    var my = ++playGen;
+    function failed(err){
+      if (my !== playGen || state.mode !== "speaking") return;
+      remoteOK = false;
+      elVoiceCtl.hidden = false;
+      engineKind = (synth && voices.length) ? "tts" : "silent";
+      setStatus(engineKind === "tts" ? "云端语音不可用，已改用本机语音"
+                                     : "云端语音不可用，已切换为无声字幕模式");
+      if (window.console) console.warn("[avatar] 云端语音失败：", err);
+      speakLine(idx);
+    }
+    fetchClip(lines[idx].text).then(function(src){
+      if (my !== playGen || state.mode !== "speaking") return;
+      audio.onended = function(){ if (my === playGen) cb.end(); };
+      audio.onerror = function(){ failed(new Error("音频解码失败")); };
+      audio.src = src;
+      var p = audio.play();
+      if (p && p.catch) p.catch(function(e){ if (!e || e.name !== "AbortError") failed(e); });
+    }, failed);
+    // 顺手把下一句也要过来，句间不用干等
+    if (idx + 1 < lines.length) fetchClip(lines[idx + 1].text).catch(function(){});
+    return function cancel(){ playGen++; try{ audio.pause(); }catch(e){} };
+  }
+
+  var cancelCurrent = null;
+
+  function speakLine(idx){
+    if (idx >= lines.length){ finish(); return; }
+    state.i = idx;
+    markLine(idx);
+    var text = lines[idx].text;
+    var pause = lines[idx].pause || 0;
+
+    var cb = {
+      boundary: function(){ pulseMouth(); },
+      end: function(){
+        cancelCurrent = null;
+        if (state.mode !== "speaking") return;
+        var next = function(){ if (state.mode === "speaking") speakLine(idx + 1); };
+        if (pause > 0) setTimeout(next, pause); else next();
+      }
+    };
+
+    if (engineKind === "mock") { cancelCurrent = null; return; }   // 由测试脚本手动驱动
+    if (engineKind === "silent"){ cancelCurrent = silentSpeak(text, cb); return; }
+    if (engineKind === "remote"){ cancelCurrent = remoteSpeak(idx, cb); return; }
+
+    var u = new SpeechSynthesisUtterance(text);
+    var v = voices[parseInt(elVoice.value, 10)];
+    if (v){ u.voice = v; u.lang = v.lang; } else { u.lang = "zh-CN"; }
+    u.rate = parseFloat(elRate.value) || 1;
+    u.pitch = 1;
+    u.onboundary = cb.boundary;
+    u.onend = cb.end;
+    u.onerror = function(e){
+      // 语音引擎当场失败（常见于 iframe 被拦），退回无声模式继续讲
+      if (state.mode !== "speaking") return;
+      engineKind = "silent";
+      setStatus("语音被拦截，已切换为无声字幕模式");
+      cancelCurrent = silentSpeak(text, cb);
+    };
+    cancelCurrent = function(){ try{ synth.cancel(); }catch(e){} };
+    synth.speak(u);
+  }
+
+  function setStatus(s){ elStatus.textContent = s; }
+
+  function start(fromIdx){
+    if (!lines.length) return;
+    // Safari 要求 speak() 同步发生在点击里，所以这里不能有 await
+    if (synth){ try{ synth.cancel(); }catch(e){} }
+    // mock 是测试专用，一旦切进去就粘住，不会被真实语音抢回去
+    engineKind = (engineKind === "mock") ? "mock"
+               : remoteReady() ? "remote"
+               : ((synth && voices.length) ? "tts" : "silent");
+    if (engineKind === "remote"){
+      playGen++;
+      try { audio.src = SILENT_WAV; var p = audio.play(); if (p && p.catch) p.catch(function(){}); }
+      catch(e){}
+    }
+    state.mode = "speaking";
+    elPlay.textContent = "暂停";
+    setStatus(engineKind === "silent" ? "无声字幕模式 · 讲解中" : "讲解中");
+    speakLine(typeof fromIdx === "number" ? fromIdx : 0);
+  }
+  function pause(){
+    state.mode = "paused";
+    elPlay.textContent = "继续";
+    setStatus("已暂停");
+    if (synth){ try{ synth.cancel(); }catch(e){} }
+    if (cancelCurrent){ cancelCurrent(); cancelCurrent = null; }
+  }
+  function finish(){
+    state.mode = "done";
+    state.i = lines.length;
+    elPlay.textContent = "重新开始";
+    setStatus("讲解结束");
+    Array.prototype.forEach.call(elLines.children, function(li){
+      li.classList.remove("active"); li.classList.add("done");
+    });
+  }
+  function jumpTo(idx){
+    if (synth){ try{ synth.cancel(); }catch(e){} }
+    if (cancelCurrent){ cancelCurrent(); cancelCurrent = null; }
+    start(idx);
+  }
+
+  elPlay.addEventListener("click", function(){
+    if (state.mode === "speaking") pause();
+    else if (state.mode === "paused") start(state.i < 0 ? 0 : state.i);
+    else start(0);
+  });
+  elReplay.addEventListener("click", function(){ jumpTo(0); });
+  elRate.addEventListener("input", function(){ elRateVal.textContent = parseFloat(elRate.value).toFixed(1); });
+  elRate.addEventListener("change", function(){ if (state.mode === "speaking") jumpTo(state.i); });
+  elVoice.addEventListener("change", function(){
+    var v = voices[parseInt(elVoice.value,10)];
+    try{ if (v) localStorage.setItem("lh_avatar_voice", v.name); }catch(e){}
+    if (state.mode === "speaking") jumpTo(state.i);
+  });
+
+  /* ---------- 测试钩子 ---------- */
+  window.__avatar = {
+    get state(){ return state.mode; },
+    get index(){ return state.i; },
+    get mouth(){ return state.mouth; },
+    get engine(){ return engineKind; },
+    get audioPlaying(){ return !audio.paused && !audio.ended; },
+    get lines(){ return lines.map(function(l){ return l.text; }); },
+    useMockEngine: function(){ engineKind = "mock"; },
+    fire: function(evt){
+      if (evt === "boundary") pulseMouth();
+      else if (evt === "end"){
+        var idx = state.i;
+        markLine(idx + 1);
+        state.i = idx + 1;
+        if (state.i >= lines.length) finish();
+      }
+    },
+    start: start, pause: pause, jumpTo: jumpTo
+  };
+
+  /* ---------- 启动 ---------- */
+  var EMPTY_HTML = $("empty").innerHTML;
+
+  function init(){
+    // 换讲稿（hash 变了）时，先把正在念的停掉
+    if (synth){ try{ synth.cancel(); }catch(e){} }
+    if (cancelCurrent){ cancelCurrent(); cancelCurrent = null; }
+    state.mode = "idle"; state.i = -1;
+    elPlay.textContent = "开始讲解";
+    setStatus("点一下「开始讲解」");
+
+    return loadScriptData().then(function(data){
+      if (!data || !data.lines || !data.lines.length){
+        lines = [];
+        $("empty").innerHTML = EMPTY_HTML;
+        $("main").hidden = true;
+        $("empty").hidden = false;
+        return;
+      }
+      lines = data.lines.map(function(l){
+        return (typeof l === "string") ? {text:l, pause:0}
+                                       : {text:String(l.text||""), pause:Number(l.pause)||0};
+      }).filter(function(l){ return l.text.trim(); });
+      tts = Object.assign({}, TTS_DEFAULTS, data.tts || {});
+      remoteOK = true;
+      elVoiceCtl.hidden = remoteReady();   // 云端音色固定，本机音色下拉只在兜底时露出来
+      elTitle.textContent = data.title || "虚拟助教";
+      document.title = (data.title || "虚拟助教") + " · 先进智造学堂虚拟助教";
+      renderLines();
+      $("empty").hidden = true;
+      $("main").hidden = false;
+      if (synth && !voices.length) setStatus("正在检测语音…点一下开始讲解");
+    }).catch(function(err){
+      lines = [];
+      $("main").hidden = true;
+      $("empty").hidden = false;
+      $("empty").innerHTML = "<h2>讲稿读取失败</h2><p>" +
+        String(err && err.message || err).replace(/[<>&]/g, "") + "</p>";
+    });
+  }
+
+  window.addEventListener("hashchange", init);
+  window.__avatar.reload = init;
+  init();
+})();
+</script>
+</body>
+</html>

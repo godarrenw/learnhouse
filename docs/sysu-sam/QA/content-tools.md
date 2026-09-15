@@ -354,6 +354,9 @@ Instructor）——**它把 org_id 声明成 query 参数，所以这些接口�
 `avatar.py` 现在是纯函数模块（切句、编码、`normalize_page_url` 校验），
 不碰数据库；地址解析在 `activities.resolve_avatar_page_url`。
 
+页面本身（朗读、口型、字幕）的源码在 `apps/avatar-page/`，不跟 Docker 镜像走，
+单独构建发布到博客，见那里的 README。
+
 ---
 
 ## 4. 前端
