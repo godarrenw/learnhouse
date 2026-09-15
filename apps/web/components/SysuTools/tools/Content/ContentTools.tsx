@@ -498,7 +498,7 @@ function AvatarPanel({ courseUuid }: { courseUuid?: string }) {
           title={t('ext.tools.content.avatar.title', { defaultValue: '虚拟助教' })}
           hint={t('ext.tools.content.avatar.hint', {
             defaultValue:
-              '讲稿会压进链接的 # 后面，由浏览器自己朗读并驱动卡通头像。不占服务器资源，也不需要 API key。',
+              '讲稿会压进链接的 # 后面，由云端语音（晓双·儿童音色）朗读并驱动卡通头像。各设备听到的声音一致。',
           })}
         />
 
@@ -670,7 +670,7 @@ function AboutPanel() {
       t('ext.tools.content.about.avatar_title', { defaultValue: '虚拟助教怎么工作' }),
       t('ext.tools.content.about.avatar_body', {
         defaultValue:
-          '讲稿不存在服务器上，而是压缩后塞进链接的 # 后面。页面读到之后用浏览器自带的语音合成念出来，同时驱动头像的口型和字幕。所以链接会很长，这是正常的；也因此这个链接不能手工改，改了讲稿就没了。',
+          '讲稿不存在服务器上，而是压缩后塞进链接的 # 后面。页面读到之后逐句请求云端语音合成（晓双·儿童音色）念出来，同时驱动头像的口型和字幕；网络不通时自动改用浏览器自带的语音。所以链接会很长，这是正常的；也因此这个链接不能手工改，改了讲稿就没了。',
       }),
     ],
   ]

@@ -105,7 +105,7 @@
       },
       "avatar": {
         "title": "Virtual assistant",
-        "hint": "The script is compressed into the link's fragment. The browser reads it aloud and drives a cartoon avatar. No server load, no API key.",
+        "hint": "The script is compressed into the link's fragment. A cloud voice (Xiaoshuang, child) reads it aloud and drives a cartoon avatar, so it sounds the same on every device.",
         "page": "Append to which page",
         "pick_page": "Pick one…",
         "no_pages": "This course has no rich-text pages yet",
@@ -140,7 +140,7 @@
         "transfer_title": "What import and export can carry",
         "transfer_body": "Only content pages and full-page embeds survive the round trip. Original video and PDF files are not in the archive, and assignments should be moved with the assignment tools. Import always creates new chapters and never overwrites what is already there.",
         "avatar_title": "How the virtual assistant works",
-        "avatar_body": "The script is never stored on the server. It is compressed into the part of the link after the #. The page reads it with the browser's own speech synthesis and drives the avatar's mouth and captions. That is why the link is long, and why it must not be edited by hand — change it and the script is gone."
+        "avatar_body": "The script is never stored on the server. It is compressed into the part of the link after the #. The page reads it line by line with cloud speech synthesis (Xiaoshuang, child voice) and drives the avatar's mouth and captions, falling back to the browser's own voice when offline. That is why the link is long, and why it must not be edited by hand — change it and the script is gone."
       }
     },
     "example": {
