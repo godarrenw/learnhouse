@@ -501,7 +501,7 @@ function OrgUsers() {
                   </div>
                 </div>
               ) : (
-                <div className="relative">
+                <div className="relative overflow-x-auto">
                 {isPageTransitioning && (
                   <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center rounded-lg">
                     <LearnHouseSpinner size={28} />
@@ -609,8 +609,8 @@ function OrgUsers() {
                               {user.usergroups.map((group: any) => (
                                 <span
                                   key={group.id}
-                                  className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-md font-medium"
-                                  title={group.description}
+                                  className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-md font-medium whitespace-nowrap"
+                                  title={group.description || group.name}
                                 >
                                   <Users className="w-3 h-3" />
                                   {group.name}
@@ -740,7 +740,7 @@ function OrgUsers() {
 
                         {/* Actions */}
                         <td className="px-6 py-4 text-end">
-                          <div className="inline-flex items-center gap-1.5">
+                          <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                             <button
                               onClick={() => setAnalyticsUserId(user.user.id)}
                               className="inline-flex items-center gap-1.5 h-8 px-3 bg-white text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 rounded-md text-xs font-medium nice-shadow transition-all"
