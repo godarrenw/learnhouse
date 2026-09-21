@@ -4253,7 +4253,9 @@
         "reset_answers": "重置答案",
         "mark_correct": "标记为正确",
         "mark_incorrect": "标记为不正确",
-        "delete_answer": "删除答案"
+        "delete_answer": "删除答案",
+        "question_label": "题目",
+        "select_all_that_apply": "可多选"
       },
       "math_block": {
         "templates": "模板",
