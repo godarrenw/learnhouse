@@ -10,7 +10,7 @@ services:
     # 被 workflow 的 paths-ignore 挡掉没触发重建，所以它就是当前代码的产物。
     # index digest: sha256:1bbf7e3d47f19f153c692615810455a028acb371af17c6362ebc8dac723dd6ac
     # （2026-09-12 从 ghcr 取 manifest 核对过，平台 linux/amd64）
-    image: ghcr.io/godarrenw/learnhouse:sysu-sam-831f709
+    image: ghcr.io/godarrenw/learnhouse:sysu-sam-b4ce7c2
     container_name: learnhouse-app-nas
     restart: unless-stopped
     env_file:
