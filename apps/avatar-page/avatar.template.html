@@ -177,7 +177,10 @@
 
   /* ---------- 嘴 + 点头 动画 ---------- */
   var target = 0, current = 0, lastPulse = 0, t0 = performance.now();
+  var lastOpacity = "", lastTransform = "";
+  var onScreen = true, rafId = 0;   // 头像滚出视口时停掉动画循环，省电
   function frame(now){
+    rafId = 0;
     // 云端语音还在下载、没真正出声的时候，嘴别动
     var speaking = (state.mode === "speaking") &&
                    (engineKind !== "remote" || (!audio.paused && !audio.ended));
@@ -195,16 +198,24 @@
     current += (target - current) * 0.35;
     state.mouth = current;
     // 张嘴帧叠在闭嘴帧上，用不透明度做连续的口型过渡（两帧是同一张底图改的嘴）
-    elOpen.style.opacity = current.toFixed(3);
+    // 值没变就不写 DOM，闭着嘴的时候每帧少一次样式写入
+    var op = current.toFixed(3);
+    if (op !== lastOpacity){ elOpen.style.opacity = op; lastOpacity = op; }
     // 轻微点头
     var t = (now - t0)/1000;
     var amp = speaking ? 1 : 0.25;
-    elHead.style.transform =
-      "translateY(" + (Math.sin(t*2.1)*0.7*amp).toFixed(2) + "%) rotate(" +
-      (Math.sin(t*0.9)*0.7*amp).toFixed(2) + "deg)";
-    requestAnimationFrame(frame);
+    var tf = "translateY(" + (Math.sin(t*2.1)*0.7*amp).toFixed(2) + "%) rotate(" +
+             (Math.sin(t*0.9)*0.7*amp).toFixed(2) + "deg)";
+    if (tf !== lastTransform){ elHead.style.transform = tf; lastTransform = tf; }
+    if (onScreen) rafId = requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
+  if (typeof IntersectionObserver === "function"){
+    new IntersectionObserver(function(entries){
+      onScreen = entries[entries.length - 1].isIntersecting;
+      if (onScreen && !rafId) rafId = requestAnimationFrame(frame);
+    }).observe(elFace);
+  }
 
   function pulseMouth(){ lastPulse = 0; target = 0.35 + Math.random()*0.65; }
 
@@ -496,6 +507,11 @@
         $("empty").hidden = false;
         return;
       }
+      // 换了讲稿，旧句子的音频用不上了，释放掉
+      Object.keys(clips).forEach(function(k){
+        clips[k].then(function(u){ URL.revokeObjectURL(u); }, function(){});
+      });
+      clips = {};
       lines = data.lines.map(function(l){
         return (typeof l === "string") ? {text:l, pause:0}
                                        : {text:String(l.text||""), pause:Number(l.pause)||0};
