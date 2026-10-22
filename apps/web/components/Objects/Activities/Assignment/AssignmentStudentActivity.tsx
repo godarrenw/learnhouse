@@ -14,6 +14,9 @@ import { AlarmClockOff, Backpack, BookOpenCheck, Calendar, CheckCircle2, Clipboa
 import Link from 'next/link';
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next';
+/* --- SYSU-SAM --- */
+import AttachmentsCard from '@components/SysuAssignAttachments/AttachmentsCard';
+/* --- /SYSU-SAM --- */
 
 type ParsedDueDate = { at: Date; hasTime: boolean }
 
@@ -227,6 +230,9 @@ function AssignmentStudentActivity() {
         </div>
       )}
       
+      {/* --- SYSU-SAM: 作业题目附件，学生打开即可下载 --- */}
+      <AttachmentsCard assignmentUuid={assignments?.assignment_object?.assignment_uuid} />
+      {/* --- /SYSU-SAM --- */}
       
       {/* Model answer ("corrigé"). Locked, this is only a promise — the text and
           the document are withheld by the API until the learner hands their

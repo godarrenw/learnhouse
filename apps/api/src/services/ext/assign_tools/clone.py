@@ -30,6 +30,10 @@ from src.db.courses.courses import Course
 from src.db.users import PublicUser
 from src.security.rbac import AccessAction, check_resource_access
 from src.services.courses.courses import clone_course
+from src.services.ext.assign_attachments import (
+    attachment_count_of,
+    copy_attachments,
+)
 
 from .spec import SpecError
 
@@ -125,6 +129,7 @@ async def clone_term(
             "old_due_date": a.due_date,
             "new_due_date": _new_due(a.due_date),
             "task_count": len((await _tasks_of(a.id, db_session))),
+            "attachment_count": await attachment_count_of(a.id or 0, db_session),
         }
         for a in src_assignments
     ]
@@ -235,9 +240,21 @@ async def clone_term(
             "source_assignment_uuid": a.assignment_uuid,
             "assignment_uuid": new_assignment.assignment_uuid,
             "task_count": made,
+            "attachment_count": 0,
             "old_due_date": a.due_date,
             "new_due_date": new_due,
         })
+
+        # 题目附件单独复制（读源字节、写新作业目录、插新行）。源文件读不到时
+        # 跳过并记进 skipped，不影响作业与题目的复制。
+        attachments = await copy_attachments(db_session, a, new_assignment)
+        copied[-1]["attachment_count"] = attachments["copied"]
+        for miss in attachments["skipped"]:
+            skipped.append({
+                "assignment": a.title,
+                "reason": "附件「%s」没有复制：%s"
+                          % (miss["original_name"] or "?", miss["reason"]),
+            })
 
     await db_session.commit()
 

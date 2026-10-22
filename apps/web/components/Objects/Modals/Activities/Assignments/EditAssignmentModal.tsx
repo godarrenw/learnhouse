@@ -11,6 +11,9 @@ import * as Form from '@radix-ui/react-form';
 import { useFormik } from 'formik';
 import Modal from '@components/Objects/StyledElements/Modal/Modal';
 import { useTranslation } from 'react-i18next';
+/* --- SYSU-SAM --- */
+import AttachmentsEditor from '@components/SysuAssignAttachments/AttachmentsEditor';
+/* --- /SYSU-SAM --- */
 
 // Same input class used by the create-assignment modal, so both forms look
 // identical to the user.
@@ -470,6 +473,13 @@ const EditAssignmentForm: React.FC<EditAssignmentFormProps> = ({
                     )}
                 </div>
             </div>
+
+            {/* --- SYSU-SAM: 题目附件（立刻生效，不跟随弹窗的保存） --- */}
+            <AttachmentsEditor
+                assignmentUuid={assignment.assignment_uuid}
+                accessToken={accessToken}
+            />
+            {/* --- /SYSU-SAM --- */}
 
             {/* Model answer ("corrigé") */}
             <SolutionSection

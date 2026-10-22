@@ -30,6 +30,7 @@ SUBMODULES: Sequence[Union[str, Tuple[str, str]]] = [
     ("assign_tools", "/assign"),
     ("content_tools", "/content"),
     ("checkin", "/checkin"),
+    ("assign_attachments", "/assign-attachments"),
     "media_sign",
 ]
 

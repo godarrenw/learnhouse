@@ -19,6 +19,9 @@ import { useLHSession } from '@components/Contexts/LHSessionContext';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics';
+/* --- SYSU-SAM --- */
+import AttachmentsCard from '@components/SysuAssignAttachments/AttachmentsCard';
+/* --- /SYSU-SAM --- */
 
 function pctToLetterGrade(pct: number): string {
     if (pct >= 90) return 'A';
@@ -232,6 +235,10 @@ function EvaluateAssignment({ user_id }: any) {
 
     return (
         <div className='flex flex-col min-h-fit'>
+            {/* --- SYSU-SAM: 题目附件（只读），批改时对照题目用 --- */}
+            <AttachmentsCard assignmentUuid={assignmentUuid} />
+            {/* --- /SYSU-SAM --- */}
+
             {/* Formative notice, in place of the grade preview */}
             {isUngraded && (
                 <div className='flex items-center space-x-3 bg-teal-50/70 border border-teal-200/70 nice-shadow rounded-xl px-5 py-3 mb-4'>

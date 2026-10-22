@@ -146,6 +146,12 @@ export const queryKeys = {
       courseTree: (courseUuid: string) => ['ext', 'content', 'tree', courseUuid] as const,
       qr: (text: string) => ['ext', 'content', 'qr', text] as const,
     },
+    /* --- SYSU-SAM: 作业题目附件 --- */
+    assignAttachments: {
+      list: (assignmentUuid: string) =>
+        ['ext', 'assignAttachments', 'list', assignmentUuid] as const,
+    },
+    /* --- /SYSU-SAM --- */
   },
   /* --- /SYSU-SAM --- */
 }
