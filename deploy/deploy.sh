@@ -64,7 +64,7 @@ prod)
   #   没问题；但**不要**在 zsh 里手工 source 这些片段 —— zsh 默认不对未加引号的
   #   变量做分词，整个字符串会被当成一个命令名，报 "no such file or directory"。
   SSH_CTL="/tmp/lh-ssh-ctl-$$"
-  SSH="sshpass -e ssh -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no \
+  SSH="sshpass -e ssh -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=yes \
        -o ControlMaster=auto -o ControlPath=${SSH_CTL} -o ControlPersist=300 \
        ${NAS_USER}@${NAS_HOST}"
   # 退出时收掉主连接，别把它留到 ControlPersist 超时
@@ -259,7 +259,13 @@ if [ "$TARGET" = prod ]; then
   # TODO: pull 之前先查这个 commit 的构建成功了没，别闷头拉一个还没推上去的 tag：
   #       gh run list -R godarrenw/learnhouse --limit 1
   log "拉取新镜像…"
-  dc "pull learnhouse-app" || die "拉镜像失败"
+  # 此时 NAS 上的 compose 仍指向旧镜像，不能据此 pull。
+  # 先解析待发布的仓库配置，在覆盖线上配置之前拉齐新镜像。
+  CFG=$(repo_compose_config 2>/dev/null) || die "compose config 失败"
+  IMG=$(printf '%s\n' "$CFG" | awk '/learnhouse-app:/{f=1} f&&/image:/{print $2; exit}')
+  [ -n "$IMG" ] || die "从 compose config 里取不到 app 镜像名"
+  log "目标镜像：${IMG}"
+  dk "pull ${IMG}" || die "拉镜像失败"
 else
   # 注意不能写成 `config | awk '…{exit}'`：awk 提前 exit 会让上游 compose 收到
   # SIGPIPE，配合 set -o pipefail 整条管道非零，脚本会在这里无声中止。
