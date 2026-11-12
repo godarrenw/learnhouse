@@ -17,7 +17,7 @@ https://blog.sysu-sam.com/@zhuyizhang/lh-avatar
 ```
 
 - **声音**：Edge TTS 代理（`POST {url}/v1/audio/speech`，`Authorization: Bearer <key>`），
-  默认音色 `zh-CN-XiaoshuangNeural`（晓双·儿童）。地址、key、音色在模板里的 `TTS_DEFAULTS`。
+  默认音色 `zh-CN-YunxiNeural`（云希·成人男声）。地址、key、音色在模板里的 `TTS_DEFAULTS`。
   讲稿 payload 带 `tts` 字段时逐项覆盖。
 - **兜底**：云端失败 → 浏览器自带 `speechSynthesis` → 无声字幕模式。
 - **key 是公开的**：它在页面源码里，谁都看得到，只能放临时 key。
@@ -43,6 +43,10 @@ BLOG_API_KEY=... bash apps/avatar-page/publish.sh   # 覆盖发布
 发布是覆盖同一个地址，**所有已经发出去的链接立刻用上新版**，讲稿不用重新生成。
 只要不改 `#j=` / `#s=` 的讲稿格式，旧链接就一直能用；要改格式，记得同时改后端
 `avatar.py` 的 `encode_payload` 并保留对旧格式的解析。
+
+默认音色更新也需要发布此静态页，仅更新 LearnHouse 镜像不会改变播放声音。
+未指定 `tts.voice` 的旧链接会在重新加载新版页面后使用云希；显式指定音色的链接保留其设置。
+批量更新时由统一发布入口安排静态页发布，不在单个需求中运行 `publish.sh`。
 
 ## 注意
 
