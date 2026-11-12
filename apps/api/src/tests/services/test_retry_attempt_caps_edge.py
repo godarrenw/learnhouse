@@ -6,7 +6,7 @@ Targets two service functions in
 ``src/services/courses/activities/assignments.py``:
 
 - ``retry_assignment_submission`` — resets a GRADED submission for another
-  attempt. Requires ``allow_retries``; only GRADED rows are retryable; the
+  attempt. Requires ``allow_retries``; handed-in rows are retryable; the
   attempt cap (``max_retries=0`` is unlimited, else ``current_attempt`` must
   be strictly < ``max_retries``) is enforced; on success it wipes per-task
   submissions, flips the row to PENDING/grade 0, resets the TrailStep, and
@@ -18,7 +18,7 @@ Targets two service functions in
 These cases are deliberately complementary to
 ``src/tests/routers/test_assignments_retry.py``. That file already covers:
 retry success, allow_retries=False 403, attempt-limit-reached (attempt ==
-max) 403, retry of a SUBMITTED row 400, 404s (no submission / missing
+max) 403, retry of a SUBMITTED row, 404s (no submission / missing
 assignment / missing course), single unlimited retry, reuse of a
 directly-seeded PENDING row, and the SUBMITTED/GRADED create rejections.
 
@@ -216,9 +216,7 @@ class TestRetryStatusGatingEdge:
     async def test_retry_rejects_pending_submission(
         self, db, regular_user, mock_request, assignment
     ):
-        """A PENDING row (mid-retry, not yet resubmitted) is not GRADED, so
-        retry must reject it with 400 — same gate as SUBMITTED but exercising
-        the PENDING value specifically."""
+        """A PENDING row is mid-retry and cannot be reset again."""
         await _make_user_submission(
             db,
             assignment.id,
@@ -235,7 +233,7 @@ class TestRetryStatusGatingEdge:
                 )
 
         assert exc.value.status_code == 400
-        assert "Only graded submissions" in exc.value.detail
+        assert "Only submitted assignments" in exc.value.detail
 
 
 # ---------------------------------------------------------------------------
@@ -388,8 +386,13 @@ class TestRetrySideEffectsEdge:
 
 
 class TestRetryThenResubmitChain:
+    @pytest.mark.parametrize("status", [
+        AssignmentUserSubmissionStatus.SUBMITTED,
+        AssignmentUserSubmissionStatus.LATE,
+        AssignmentUserSubmissionStatus.GRADED,
+    ])
     async def test_real_retry_then_create_reuses_same_row(
-        self, db, regular_user, mock_request, org, course, activity, assignment
+        self, db, regular_user, mock_request, org, course, activity, assignment, status
     ):
         """The existing suite seeds a PENDING row directly to test create's
         reuse path. Here the PENDING state is produced by the REAL retry
@@ -399,7 +402,7 @@ class TestRetryThenResubmitChain:
         original_uuid = "aus_chain_test"
         submission = await _make_user_submission(
             db, assignment.id, regular_user.id,
-            attempt_number=1, uuid=original_uuid,
+            attempt_number=1, uuid=original_uuid, status=status,
         )
         original_id = submission.id
         await _make_trailstep(

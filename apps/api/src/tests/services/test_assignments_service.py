@@ -2172,15 +2172,20 @@ class TestAssignmentIntegrityGuards:
             )
         assert isinstance(result, AssignmentTaskSubmissionRead)
 
+    @pytest.mark.parametrize("status", [
+        AssignmentUserSubmissionStatus.SUBMITTED,
+        AssignmentUserSubmissionStatus.LATE,
+        AssignmentUserSubmissionStatus.GRADED,
+    ])
     async def test_retry_past_due_is_rejected(
-        self, mock_request, db, assignment, course, regular_user
+        self, mock_request, db, assignment, course, regular_user, status
     ):
         """Retry wipes answers, grade, trail step and certificate. Past the
         deadline the learner can never resubmit, so this destroyed graded work."""
         assignment.allow_retries = True
         await self._set_due(db, assignment, "2000-01-01")
-        await self._user_submission(
-            db, assignment, regular_user, AssignmentUserSubmissionStatus.GRADED
+        submission = await self._user_submission(
+            db, assignment, regular_user, status
         )
         with patch(_PATCH_RBAC, new_callable=AsyncMock), \
              patch(_PATCH_AUTH_ROLES, new_callable=AsyncMock, return_value=False):
@@ -2190,6 +2195,9 @@ class TestAssignmentIntegrityGuards:
                 )
         assert exc.value.status_code == 403
         assert "deadline has passed" in exc.value.detail
+        await db.refresh(submission)
+        assert submission.submission_status == status
+        assert submission.attempt_number == 1
 
     async def test_grading_a_pending_submission_is_rejected(
         self, mock_request, db, assignment, course, regular_user, admin_user

@@ -223,12 +223,21 @@ async def _make_certificate(db, course, user_id):
 
 
 class TestRetryAssignmentSubmissionService:
+    @pytest.mark.parametrize("status", [
+        AssignmentUserSubmissionStatus.SUBMITTED,
+        AssignmentUserSubmissionStatus.LATE,
+        AssignmentUserSubmissionStatus.GRADED,
+    ])
     async def test_retry_success_resets_submission_tasks_and_trailstep(
-        self, db, regular_user, mock_request, org, course, activity, assignment, assignment_task
+        self, db, regular_user, admin_user, mock_request, org, course, activity,
+        assignment, assignment_task, status
     ):
         user_id = regular_user.id
-        submission = await _make_user_submission(db, assignment.id, user_id)
+        submission = await _make_user_submission(db, assignment.id, user_id, status=status)
         task_sub = await _make_task_submission(db, assignment_task, user_id)
+        other_task_sub = await _make_task_submission(
+            db, assignment_task, admin_user.id, uuid="ats_other_user"
+        )
         _, _, step = await _make_trail_artifacts(
             db, org.id, course.id, activity.id, user_id, complete=True
         )
@@ -259,6 +268,9 @@ class TestRetryAssignmentSubmissionService:
             )
         )).scalars().first()
         assert leftover_task_sub is None
+        await db.refresh(other_task_sub)
+        assert other_task_sub.task_submission == {"answer": "x"}
+        assert other_task_sub.grade == 50
 
         await db.refresh(step)
         assert step.complete is False
@@ -315,14 +327,39 @@ class TestRetryAssignmentSubmissionService:
         assert exc_info.value.status_code == 403
         assert "No retry attempts remaining" in exc_info.value.detail
 
-    async def test_retry_rejects_non_graded_submission(
+    @pytest.mark.parametrize("status", [
+        AssignmentUserSubmissionStatus.SUBMITTED,
+        AssignmentUserSubmissionStatus.LATE,
+    ])
+    async def test_retry_accepts_submission_awaiting_grading(
+        self, db, regular_user, mock_request, assignment, status
+    ):
+        submission = await _make_user_submission(
+            db, assignment.id, regular_user.id, status=status,
+        )
+        original_uuid = submission.assignmentusersubmission_uuid
+
+        with patch(
+            "src.services.courses.activities.assignments.check_resource_access",
+            new_callable=AsyncMock,
+        ):
+            result = await retry_assignment_submission(
+                mock_request, assignment.assignment_uuid, regular_user, db
+            )
+
+        assert result["attempt_number"] == 2
+        await db.refresh(submission)
+        assert submission.assignmentusersubmission_uuid == original_uuid
+        assert result["submission"]["submission_status"] == "PENDING"
+
+    async def test_retry_rejects_pending_submission(
         self, db, regular_user, mock_request, assignment
     ):
         await _make_user_submission(
             db,
             assignment.id,
             regular_user.id,
-            status=AssignmentUserSubmissionStatus.SUBMITTED,
+            status=AssignmentUserSubmissionStatus.PENDING,
         )
 
         with patch(
@@ -335,7 +372,7 @@ class TestRetryAssignmentSubmissionService:
                 )
 
         assert exc_info.value.status_code == 400
-        assert "Only graded submissions" in exc_info.value.detail
+        assert "Only submitted assignments" in exc_info.value.detail
 
     async def test_retry_returns_404_when_no_submission_exists(
         self, db, regular_user, mock_request, assignment

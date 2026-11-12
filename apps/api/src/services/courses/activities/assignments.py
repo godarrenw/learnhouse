@@ -3577,27 +3577,10 @@ async def retry_assignment_submission(
             detail="Assignment User Submission not found",
         )
 
-    # Only graded submissions are eligible to be retried. Retrying a row
-    # that is still SUBMITTED would silently throw away the student's
-    # pending work before the teacher even sees it.
-    #
-    # A formative (ungraded) assignment is the exception: it is never GRADED, so
-    # requiring that status would make `allow_retries` unreachable there. Its
-    # submissions become retryable as soon as they are handed in — which is the
-    # point of a formative loop (read the corrige, try again).
-    retryable_statuses = (
-        _HANDED_IN_STATUSES
-        if assignment.ungraded
-        else (AssignmentUserSubmissionStatus.GRADED,)
-    )
-    if assignment_user_submission.submission_status not in retryable_statuses:
+    if assignment_user_submission.submission_status not in _HANDED_IN_STATUSES:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Only submitted assignments can be retried"
-                if assignment.ungraded
-                else "Only graded submissions can be retried"
-            ),
+            detail="Only submitted assignments can be retried",
         )
 
     # Retry is destructive and irreversible: it deletes every task submission,

@@ -58,8 +58,8 @@ class AssignmentBase(SQLModel):
     # so existing assignments don't start leaking answer keys automatically —
     # the teacher must explicitly opt in.
     show_correct_answers: Optional[bool] = False
-    # When True, after a submission is GRADED the student may reset their work
-    # and try the assignment again. The retry wipes per-task submissions and
+    # When True, after handing in the student may reset their work before the
+    # deadline and try again. The retry wipes per-task submissions and
     # the user submission row back to a fresh state — only the attempt
     # counter on AssignmentUserSubmission survives, so a future grade
     # replaces the previous one (no submission history is kept).

@@ -858,7 +858,8 @@ async def api_final_grade_submission(
     description=(
         "Reset the current user's submission so they can attempt the "
         "assignment again. Only allowed when the assignment has "
-        "allow_retries=true, the existing submission is in GRADED state, "
+        "allow_retries=true, the existing submission is handed in "
+        "(SUBMITTED, LATE or GRADED), the deadline has not passed for learners, "
         "and the attempt counter is still below max_retries (0 means "
         "unlimited). Wipes per-task submissions, resets the trail step, "
         "and revokes any course certificate."
