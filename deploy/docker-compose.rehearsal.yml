@@ -11,8 +11,8 @@
 
 services:
   learnhouse-app:
-    image: learnhouse-sysu-sam:local
-    platform: linux/arm64
+    image: ghcr.io/godarrenw/learnhouse:sysu-sam-6356881
+    platform: linux/amd64
     container_name: learnhouse-app-reh
 
   nginx:
@@ -37,4 +37,4 @@ networks:
   learnhouse-network-nas:
     ipam:
       config:
-        - subnet: 172.22.0.0/24
+        - subnet: 172.29.231.0/24

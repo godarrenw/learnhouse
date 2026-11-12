@@ -8,7 +8,7 @@ services:
     # 回滚也只是换回上一个 tag。打 sysu-v* tag 时会额外出一个版本 tag。
     # 本 tag 构建自 commit 17775cf0（作业题目附件），平台 linux/amd64。
     # 构建与部署核对的 digest、备份和验收结果见本目录对应部署记录。
-    image: ghcr.io/godarrenw/learnhouse:sysu-sam-17775cf
+    image: ghcr.io/godarrenw/learnhouse:sysu-sam-6356881
     container_name: learnhouse-app-nas
     restart: unless-stopped
     env_file:
