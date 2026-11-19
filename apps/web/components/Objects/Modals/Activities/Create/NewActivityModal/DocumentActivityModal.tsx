@@ -3,32 +3,38 @@ import * as Form from '@radix-ui/react-form'
 import BarLoader from 'react-spinners/BarLoader'
 import { FileText } from '@phosphor-icons/react'
 import { constructAcceptValue } from '@/lib/constants'
+import { useTranslation } from 'react-i18next'
 
-const SUPPORTED_FILES = constructAcceptValue(['pdf'])
+const SUPPORTED_FILES = constructAcceptValue(['pdf', 'html'])
 
-function DocumentPdfModal({ submitFileActivity, chapterId, course }: any) {
-  const [documentpdf, setDocumentPdf] = React.useState(null) as any
+function DocumentActivityModal({ submitFileActivity, chapterId, course }: any) {
+  const { t } = useTranslation()
+  const [documentFile, setDocumentFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [name, setName] = React.useState('')
 
-  const handleSubmit = async (e: any) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!documentFile) return
     setIsSubmitting(true)
-    await submitFileActivity(
-      documentpdf,
-      'documentpdf',
-      {
-        name: name,
-        chapter_id: chapterId,
-        activity_type: 'TYPE_DOCUMENT',
-        activity_sub_type: 'SUBTYPE_DOCUMENT_PDF',
-        published_version: 1,
-        version: 1,
-        course_id: course.id,
-      },
-      chapterId
-    )
-    setIsSubmitting(false)
+    try {
+      await submitFileActivity(
+        documentFile,
+        'documentpdf',
+        {
+          name: name,
+          chapter_id: chapterId,
+          activity_type: 'TYPE_DOCUMENT',
+          activity_sub_type: 'SUBTYPE_DOCUMENT_PDF',
+          published_version: 1,
+          version: 1,
+          course_id: course.id,
+        },
+        chapterId
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -42,7 +48,7 @@ function DocumentPdfModal({ submitFileActivity, chapterId, course }: any) {
       >
         <span className="flex items-center gap-2 bg-white nice-shadow rounded-full px-4 py-1.5 text-sm font-medium text-gray-600">
           <FileText size={18} weight="duotone" className="text-emerald-400" />
-          Document
+          {t('dashboard.courses.structure.activity.types.document')}
         </span>
       </div>
 
@@ -67,16 +73,16 @@ function DocumentPdfModal({ submitFileActivity, chapterId, course }: any) {
 
         <Form.Field name="documentpdf-activity-file" className="space-y-1.5">
           <Form.Label className="text-sm font-medium text-gray-700">
-            PDF file
+            {t('dashboard.courses.structure.activity.document_file.label')}
           </Form.Label>
           <Form.Message match="valueMissing" className="text-xs text-red-500">
-            Please provide a PDF file
+            {t('dashboard.courses.structure.activity.document_file.required')}
           </Form.Message>
           <Form.Control asChild>
             <input
               accept={SUPPORTED_FILES}
               type="file"
-              onChange={(e: any) => setDocumentPdf(e.target.files[0])}
+              onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)}
               required
               className="w-full text-sm text-gray-500 file:me-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors"
             />
@@ -107,4 +113,4 @@ function DocumentPdfModal({ submitFileActivity, chapterId, course }: any) {
   )
 }
 
-export default DocumentPdfModal
+export default DocumentActivityModal

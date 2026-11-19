@@ -12,6 +12,7 @@ export const ACCEPTED_FILE_FORMATS = {
     ogg: 'audio/ogg',
     m4a: 'audio/mp4',
     pdf: 'application/pdf',
+    html: '.html,.htm',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     zip: 'application/zip,application/x-zip-compressed'

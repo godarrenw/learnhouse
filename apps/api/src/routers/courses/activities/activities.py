@@ -1,6 +1,7 @@
 from typing import List, Optional
 import json
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form, Request, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from src.db.courses.activities import ActivityCreate, ActivityRead, ActivityUpdate
 from src.db.courses.activity_versions import ActivityVersionRead, ActivityStateRead
@@ -25,6 +26,7 @@ from src.services.courses.activities.versioning import (
 from src.security.auth import get_current_user
 from src.services.courses.activities.pdf import (
     create_documentpdf_activity,
+    get_html_document,
     update_documentpdf_activity,
 )
 from src.services.courses.activities.video import (
@@ -463,11 +465,11 @@ async def api_create_external_video_activity(
 @router.post(
     "/documentpdf",
     response_model=ActivityRead,
-    summary="Create PDF document activity",
-    description="Create a new activity by uploading a PDF document. The file is stored and attached to the given chapter.",
+    summary="Create document activity",
+    description="Upload a PDF or HTML document and attach it to the given chapter.",
     responses={
         200: {
-            "description": "PDF activity created and returned.",
+            "description": "Document activity created and returned.",
             "model": ActivityRead,
         },
         401: {"description": "Authentication required"},
@@ -588,7 +590,7 @@ async def api_update_external_video_activity(
 @router.put(
     "/documentpdf/{activity_uuid}",
     response_model=ActivityRead,
-    summary="Update PDF document activity",
+    summary="Update document activity",
 )
 async def api_update_documentpdf_activity(
     request: Request,
@@ -600,6 +602,32 @@ async def api_update_documentpdf_activity(
 ) -> ActivityRead:
     return await update_documentpdf_activity(
         request, activity_uuid, current_user, db_session, name, pdf_file
+    )
+
+
+@router.get(
+    "/{activity_uuid}/document-html",
+    response_class=HTMLResponse,
+    summary="Preview a stored HTML document in a sandbox",
+)
+async def api_get_html_document(
+    request: Request,
+    activity_uuid: str,
+    current_user: PublicUser = Depends(get_current_user),
+    db_session=Depends(get_db_session),
+) -> HTMLResponse:
+    content = await get_html_document(request, activity_uuid, current_user, db_session)
+    return HTMLResponse(
+        content=content,
+        headers={
+            "Content-Security-Policy": (
+                "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                "font-src data:; base-uri 'none'; form-action 'none'"
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        },
     )
 
 

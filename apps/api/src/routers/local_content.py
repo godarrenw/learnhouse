@@ -31,6 +31,7 @@ from src.security.submission_file_access import (
     is_submission_file,
     enforce_submission_file_access,
 )
+from src.services.courses.activities.uploads.pdfs import HTML_DOCUMENT_DIRECTORY
 
 router = APIRouter()
 
@@ -103,6 +104,8 @@ async def _check_content_access(
         and parts[2] == 'courses'
         and parts[4] == 'activities'
     ):
+        if len(parts) > 6 and parts[6] == HTML_DOCUMENT_DIRECTORY:
+            raise HTTPException(status_code=404, detail="File not found")
         course_uuid = parts[3]
         course = (await db_session.execute(
             select(Course).where(Course.course_uuid == course_uuid)

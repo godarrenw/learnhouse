@@ -111,7 +111,7 @@ async def test_create_documentpdf_activity_passes_extra_metadata(
     )
 
     with patch(
-        "src.services.courses.activities.pdf.upload_pdf",
+        "src.services.courses.activities.uploads.pdfs.upload_pdf",
         new_callable=AsyncMock,
         return_value="x.pdf",
     ) as mock_upload:

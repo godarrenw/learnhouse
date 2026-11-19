@@ -6,9 +6,12 @@ import { constructAcceptValue } from '@/lib/constants'
 import { updateDocumentActivity } from '@services/courses/activities'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import toast from 'react-hot-toast'
-import { mutate } from 'swr'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/query/keys'
+import { revalidateTags } from '@services/utils/ts/requests'
+import { useTranslation } from 'react-i18next'
 
-const SUPPORTED_FILES = constructAcceptValue(['pdf'])
+const SUPPORTED_FILES = constructAcceptValue(['pdf', 'html'])
 
 interface EditDocumentActivityModalProps {
   activity: any
@@ -18,11 +21,13 @@ interface EditDocumentActivityModalProps {
 }
 
 function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: EditDocumentActivityModalProps) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const session = useLHSession() as any
   const access_token = session?.data?.tokens?.access_token
 
   const [name, setName] = useState(activity.name || '')
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [documentFile, setDocumentFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,14 +40,18 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
         activity.activity_uuid,
         access_token,
         name !== activity.name ? name : undefined,
-        pdfFile,
+        documentFile,
       )
 
       if (res?.success === false) {
-        toast.error('Failed to update document activity', { id: toastId })
+        const detail = res.data?.detail
+        toast.error(typeof detail === 'string' ? detail : 'Failed to update document activity', { id: toastId })
       } else {
         toast.success('Document activity updated', { id: toastId })
-        mutate((key: string) => typeof key === 'string' && key.includes('/courses/org_slug/'))
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.courses.meta(courseUuid.replace(/^course_/, '')),
+        })
+        void revalidateTags(['courses'], orgSlug)
         onClose()
       }
     } catch {
@@ -63,7 +72,7 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
       >
         <span className="flex items-center gap-2 bg-white nice-shadow rounded-full px-4 py-1.5 text-sm font-medium text-gray-600">
           <FileText size={18} weight="duotone" className="text-emerald-400" />
-          PDF Document
+          {t('dashboard.courses.structure.activity.types.document')}
         </span>
       </div>
 
@@ -81,7 +90,9 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700">Replace PDF file</label>
+          <label className="text-sm font-medium text-gray-700">
+            {t('dashboard.courses.structure.activity.document_file.replace')}
+          </label>
           <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
             <FileText size={14} weight="duotone" />
             <span>Leave empty to keep the current file</span>
@@ -89,7 +100,7 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
           <input
             type="file"
             accept={SUPPORTED_FILES}
-            onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+            onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)}
             className="w-full text-sm text-gray-500 file:me-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors"
           />
         </div>

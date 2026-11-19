@@ -13,7 +13,13 @@ from src.db.courses.activities import (
 from src.db.courses.chapter_activities import ChapterActivity
 from src.db.courses.course_chapters import CourseChapter
 from src.db.users import AnonymousUser, PublicUser
-from src.services.courses.activities.uploads.pdfs import upload_pdf
+from src.services.courses.activities.activities import get_activity
+from src.services.courses.activities.uploads.pdfs import (
+    HTML_DOCUMENT_DIRECTORY,
+    HTML_DOCUMENT_SUFFIX,
+    upload_document,
+)
+from src.services.utils.upload_content import read_content
 from fastapi import HTTPException, status, UploadFile, Request
 from uuid import uuid4
 from datetime import datetime
@@ -73,31 +79,16 @@ async def create_documentpdf_activity(
     # create activity uuid
     activity_uuid = f"activity_{uuid4()}"
 
-    # check if pdf_file is not None
-    if not pdf_file:
+    if not pdf_file or not pdf_file.filename:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Pdf : No pdf file provided"
+            status_code=status.HTTP_409_CONFLICT, detail="No document file provided"
         )
 
-    if pdf_file.content_type not in ["application/pdf"]:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Pdf : Wrong pdf format"
-        )
-
-    if not pdf_file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Pdf : No pdf file provided"
-        )
-
-    # Upload pdf first to get safe filename
-    saved_filename = None
-    if pdf_file and organization and course:
-        saved_filename = await upload_pdf(
-            pdf_file,
-            activity_uuid,
-            organization.org_uuid,
-            course.course_uuid,
-        )
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    saved_filename = await upload_document(
+        pdf_file, activity_uuid, organization.org_uuid, course.course_uuid
+    )
 
     # Create activity
     activity = Activity(
@@ -105,7 +96,7 @@ async def create_documentpdf_activity(
         activity_type=ActivityTypeEnum.TYPE_DOCUMENT,
         activity_sub_type=ActivitySubTypeEnum.SUBTYPE_DOCUMENT_PDF,
         content={
-            "filename": saved_filename or "documentpdf",
+            "filename": saved_filename,
             "activity_uuid": activity_uuid,
         },
         org_id=org_id if org_id else 0,
@@ -161,8 +152,8 @@ async def update_documentpdf_activity(
     statement = select(Activity).where(Activity.activity_uuid == activity_uuid)
     activity = (await db_session.execute(statement)).scalars().first()
 
-    if not activity:
-        raise HTTPException(status_code=404, detail="Activity not found")
+    if not activity or activity.activity_type != ActivityTypeEnum.TYPE_DOCUMENT:
+        raise HTTPException(status_code=404, detail="Document activity not found")
 
     statement = select(Course).where(Course.id == activity.course_id)
     course = (await db_session.execute(statement)).scalars().first()
@@ -178,24 +169,14 @@ async def update_documentpdf_activity(
         activity.name = name
 
     if pdf_file and pdf_file.filename:
-        if pdf_file.content_type not in ["application/pdf"]:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Pdf : Wrong pdf format"
-            )
-
         statement = select(Organization).where(Organization.id == activity.org_id)
         organization = (await db_session.execute(statement)).scalars().first()
-
-        if organization and course:
-            saved_filename = await upload_pdf(
-                pdf_file,
-                activity_uuid,
-                organization.org_uuid,
-                course.course_uuid,
-            )
-            content = dict(activity.content) if activity.content else {}
-            content["filename"] = saved_filename
-            activity.content = content
+        if organization is None:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        saved_filename = await upload_document(
+            pdf_file, activity_uuid, organization.org_uuid, course.course_uuid
+        )
+        activity.content = {**(activity.content or {}), "filename": saved_filename}
 
     activity.update_date = str(datetime.now())
     db_session.add(activity)
@@ -203,3 +184,36 @@ async def update_documentpdf_activity(
     await db_session.refresh(activity)
 
     return ActivityRead.model_validate(activity)
+
+
+async def get_html_document(
+    request: Request,
+    activity_uuid: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> bytes:
+    activity = await get_activity(request, activity_uuid, current_user, db_session)
+    filename = activity.content.get("filename")
+    if (
+        activity.activity_type != ActivityTypeEnum.TYPE_DOCUMENT
+        or activity.is_locked
+        or not isinstance(filename, str)
+        or not filename.endswith(HTML_DOCUMENT_SUFFIX)
+    ):
+        raise HTTPException(status_code=404, detail="HTML document not found")
+
+    statement = (
+        select(Course.course_uuid, Organization.org_uuid)
+        .join(Organization, Organization.id == Course.org_id)
+        .where(Course.id == activity.course_id)
+    )
+    course_and_org = (await db_session.execute(statement)).first()
+    if course_and_org is None:
+        raise HTTPException(status_code=404, detail="HTML document not found")
+    course_uuid, org_uuid = course_and_org
+    return await read_content(
+        directory=f"courses/{course_uuid}/activities/{activity_uuid}/{HTML_DOCUMENT_DIRECTORY}",
+        type_of_dir="orgs",
+        uuid=org_uuid,
+        file_and_format=filename,
+    )

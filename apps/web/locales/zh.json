@@ -2113,6 +2113,12 @@
         },
         "activity": {
           "name_placeholder": "活动名称",
+          "document_file": {
+            "label": "文档文件（PDF 或 HTML）",
+            "required": "请选择 PDF 或 HTML 文件",
+            "replace": "替换文档（PDF 或 HTML）",
+            "edit_description": "修改文档名称，或替换 PDF / HTML 文件。"
+          },
           "status": {
             "published": "已发布",
             "draft": "草稿"

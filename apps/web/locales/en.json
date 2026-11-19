@@ -2757,6 +2757,12 @@
         },
         "activity": {
           "name_placeholder": "Activity name",
+          "document_file": {
+            "label": "Document file (PDF or HTML)",
+            "required": "Select a PDF or HTML file",
+            "replace": "Replace document (PDF or HTML)",
+            "edit_description": "Update the document name or replace the PDF or HTML file."
+          },
           "status": {
             "published": "Published",
             "draft": "Draft"

@@ -390,7 +390,7 @@ function ActivityElement(props: ActivitiyElementProps) {
                   minHeight="no-min"
                   minWidth="md"
                   dialogTitle="Edit Document Activity"
-                  dialogDescription="Update the document name or replace the PDF file."
+                  dialogDescription={t('dashboard.courses.structure.activity.document_file.edit_description')}
                   dialogContent={
                     <EditDocumentActivityModal
                       activity={props.activity}

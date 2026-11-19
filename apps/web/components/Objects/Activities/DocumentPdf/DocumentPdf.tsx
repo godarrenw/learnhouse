@@ -1,4 +1,5 @@
 import { useOrg } from '@components/Contexts/OrgContext'
+import { getAPIUrl } from '@services/config/config'
 import { getActivityMediaDirectory } from '@services/media/media'
 import React from 'react'
 /* --- SYSU-SAM --- */
@@ -7,17 +8,34 @@ import { useSignedMediaUrls } from '@services/media/useSignedMediaUrls'
 import CampusOnlyNotice from '@components/Objects/Media/CampusOnlyNotice'
 /* --- SYSU-SAM END --- */
 
-function DocumentPdfActivity({
-  activity,
-  course,
-  orgUuid,
-  className,
-}: {
+interface DocumentActivityProps {
   activity: any
   course: any
   orgUuid?: string
   className?: string
-}) {
+}
+
+function DocumentActivity(props: DocumentActivityProps) {
+  const { activity, className } = props
+  const filename = activity.content?.filename
+  if (typeof filename !== 'string' || !filename) return null
+  if (!filename.endsWith('_documenthtml.txt')) return <DocumentPdfActivity {...props} />
+
+  return (
+    <div className={className ?? 'm-0 sm:m-8 sm:rounded-md mt-0 sm:mt-14 bg-white'}>
+      <iframe
+        key={filename}
+        className={className ? 'w-full h-full' : 'sm:rounded-lg w-full h-[85vh] sm:h-[900px]'}
+        src={`${getAPIUrl()}activities/${encodeURIComponent(activity.activity_uuid)}/document-html`}
+        title={activity.name}
+        sandbox=""
+        referrerPolicy="no-referrer"
+      />
+    </div>
+  )
+}
+
+function DocumentPdfActivity({ activity, course, orgUuid, className }: DocumentActivityProps) {
   const org = useOrg() as any
   const resolvedOrgUuid = orgUuid || org?.org_uuid
 
@@ -56,4 +74,4 @@ function DocumentPdfActivity({
   )
 }
 
-export default DocumentPdfActivity
+export default DocumentActivity
