@@ -4,22 +4,24 @@ import BarLoader from 'react-spinners/BarLoader'
 import { FileText } from '@phosphor-icons/react'
 import { constructAcceptValue } from '@/lib/constants'
 import { useTranslation } from 'react-i18next'
+import { MAX_DOCUMENTS } from '@components/Objects/Activities/DocumentPdf/documents'
 
 const SUPPORTED_FILES = constructAcceptValue(['pdf', 'html'])
 
 function DocumentActivityModal({ submitFileActivity, chapterId, course }: any) {
   const { t } = useTranslation()
-  const [documentFile, setDocumentFile] = useState<File | null>(null)
+  const [documentFiles, setDocumentFiles] = useState<File[]>([])
+  const tooManyDocuments = documentFiles.length > MAX_DOCUMENTS
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [name, setName] = React.useState('')
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!documentFile) return
+    if (!documentFiles.length || tooManyDocuments) return
     setIsSubmitting(true)
     try {
       await submitFileActivity(
-        documentFile,
+        documentFiles,
         'documentpdf',
         {
           name: name,
@@ -55,7 +57,7 @@ function DocumentActivityModal({ submitFileActivity, chapterId, course }: any) {
       <div className="rounded-xl nice-shadow p-4 space-y-4">
         <Form.Field name="documentpdf-activity-name" className="space-y-1.5">
           <Form.Label className="text-sm font-medium text-gray-700">
-            Document name
+            {t('dashboard.courses.structure.activity.document_file.collection_name')}
           </Form.Label>
           <Form.Message match="valueMissing" className="text-xs text-red-500">
             Please provide a name
@@ -82,11 +84,15 @@ function DocumentActivityModal({ submitFileActivity, chapterId, course }: any) {
             <input
               accept={SUPPORTED_FILES}
               type="file"
-              onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)}
+              multiple
+              onChange={(event) => setDocumentFiles(Array.from(event.target.files ?? []))}
               required
               className="w-full text-sm text-gray-500 file:me-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors"
             />
           </Form.Control>
+          <p className={`text-xs ${tooManyDocuments ? 'text-red-500' : 'text-gray-500'}`}>
+            {t('dashboard.courses.structure.activity.document_file.limit', { max: MAX_DOCUMENTS })}
+          </p>
         </Form.Field>
       </div>
 
@@ -94,7 +100,7 @@ function DocumentActivityModal({ submitFileActivity, chapterId, course }: any) {
         <Form.Submit asChild>
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || tooManyDocuments}
             className="inline-flex items-center justify-center h-9 px-5 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
           >
             {isSubmitting ? (

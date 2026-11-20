@@ -486,6 +486,7 @@ async def api_create_documentpdf_activity(
     extra_metadata: Optional[str] = Form(default=None),
     current_user: PublicUser = Depends(get_current_user),
     pdf_file: UploadFile | None = None,
+    document_files: list[UploadFile] | None = None,
     db_session=Depends(get_db_session),
 ) -> ActivityRead:
     """
@@ -499,6 +500,7 @@ async def api_create_documentpdf_activity(
         db_session,
         pdf_file,
         extra_metadata=_parse_extra_metadata(extra_metadata),
+        document_files=document_files,
     )
 
 
@@ -598,10 +600,19 @@ async def api_update_documentpdf_activity(
     name: Optional[str] = Form(default=None),
     current_user: PublicUser = Depends(get_current_user),
     pdf_file: UploadFile | None = None,
+    document_files: list[UploadFile] | None = None,
+    removed_documents: list[str] | None = Form(default=None),
     db_session=Depends(get_db_session),
 ) -> ActivityRead:
     return await update_documentpdf_activity(
-        request, activity_uuid, current_user, db_session, name, pdf_file
+        request,
+        activity_uuid,
+        current_user,
+        db_session,
+        name,
+        pdf_file,
+        document_files=document_files,
+        removed_documents=removed_documents,
     )
 
 
@@ -613,10 +624,11 @@ async def api_update_documentpdf_activity(
 async def api_get_html_document(
     request: Request,
     activity_uuid: str,
+    document: str | None = None,
     current_user: PublicUser = Depends(get_current_user),
     db_session=Depends(get_db_session),
 ) -> HTMLResponse:
-    content = await get_html_document(request, activity_uuid, current_user, db_session)
+    content = await get_html_document(request, activity_uuid, current_user, db_session, document)
     return HTMLResponse(
         content=content,
         headers={

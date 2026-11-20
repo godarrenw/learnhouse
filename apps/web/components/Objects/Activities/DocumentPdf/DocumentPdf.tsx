@@ -1,7 +1,9 @@
 import { useOrg } from '@components/Contexts/OrgContext'
 import { getAPIUrl } from '@services/config/config'
 import { getActivityMediaDirectory } from '@services/media/media'
-import React from 'react'
+import React, { useState } from 'react'
+import { getActivityDocuments } from './documents'
+import { useTranslation } from 'react-i18next'
 /* --- SYSU-SAM --- */
 import { useCampusNetwork } from '@services/media/useCampusNetwork'
 import { useSignedMediaUrls } from '@services/media/useSignedMediaUrls'
@@ -17,25 +19,54 @@ interface DocumentActivityProps {
 
 function DocumentActivity(props: DocumentActivityProps) {
   const { activity, className } = props
-  const filename = activity.content?.filename
-  if (typeof filename !== 'string' || !filename) return null
-  if (!filename.endsWith('_documenthtml.txt')) return <DocumentPdfActivity {...props} />
+  const { t } = useTranslation()
+  const [selectedFilename, setSelectedFilename] = useState('')
+  const documents = getActivityDocuments(activity)
+  const selected = documents.find(({ filename }) => filename === selectedFilename) || documents[0]
+  if (!selected) return null
+  const { filename, name } = selected
+  const collection = documents.length > 1
+  const previewClass = collection ? 'w-full h-full' : className
 
-  return (
-    <div className={className ?? 'm-0 sm:m-8 sm:rounded-md mt-0 sm:mt-14 bg-white'}>
+  const preview = filename.endsWith('_documenthtml.txt') ? (
+    <div className={previewClass ?? 'm-0 sm:m-8 sm:rounded-md mt-0 sm:mt-14 bg-white'}>
       <iframe
         key={filename}
-        className={className ? 'w-full h-full' : 'sm:rounded-lg w-full h-[85vh] sm:h-[900px]'}
-        src={`${getAPIUrl()}activities/${encodeURIComponent(activity.activity_uuid)}/document-html`}
-        title={activity.name}
+        className={previewClass ? 'w-full h-full' : 'sm:rounded-lg w-full h-[85vh] sm:h-[900px]'}
+        src={`${getAPIUrl()}activities/${encodeURIComponent(activity.activity_uuid)}/document-html?document=${encodeURIComponent(filename)}`}
+        title={name}
         sandbox=""
         referrerPolicy="no-referrer"
       />
     </div>
+  ) : <DocumentPdfActivity key={filename} {...props} className={previewClass} filename={filename} title={name} />
+
+  if (!collection) return preview
+
+  return (
+    <div className={className ?? 'sm:m-8 sm:mt-14 sm:rounded-md bg-white'}>
+      <div className="flex flex-col h-full gap-2">
+        <label className="flex flex-wrap items-center gap-2 px-3 pt-3 text-sm font-medium text-gray-700">
+          {t('dashboard.courses.structure.activity.document_file.select')}
+          <select
+            className="max-w-full rounded-md border border-gray-200 bg-white px-2 py-1"
+            value={filename}
+            onChange={(event) => setSelectedFilename(event.target.value)}
+          >
+            {documents.map((item) => (
+              <option key={item.filename} value={item.filename}>{item.name}</option>
+            ))}
+          </select>
+        </label>
+        <div className={className ? 'min-h-0 flex-1' : 'h-[85vh] sm:h-[900px]'}>{preview}</div>
+      </div>
+    </div>
   )
 }
 
-function DocumentPdfActivity({ activity, course, orgUuid, className }: DocumentActivityProps) {
+function DocumentPdfActivity({
+  activity, course, orgUuid, className, filename, title,
+}: DocumentActivityProps & { filename: string; title: string }) {
   const org = useOrg() as any
   const resolvedOrgUuid = orgUuid || org?.org_uuid
 
@@ -47,7 +78,7 @@ function DocumentPdfActivity({ activity, course, orgUuid, className }: DocumentA
     resolvedOrgUuid,
     course?.course_uuid,
     activity.activity_uuid,
-    activity.content.filename,
+    filename,
     'documentpdf'
   )
   const signed = useSignedMediaUrls([rawPdfUrl])
@@ -68,6 +99,7 @@ function DocumentPdfActivity({ activity, course, orgUuid, className }: DocumentA
       <iframe
         className={className ? "w-full h-full" : "sm:rounded-lg w-full h-[85vh] sm:h-[900px]"}
         src={signed.get(rawPdfUrl)}
+        title={title}
       />
       {/* --- SYSU-SAM END --- */}
     </div>

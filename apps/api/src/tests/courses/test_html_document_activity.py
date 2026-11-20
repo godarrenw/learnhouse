@@ -88,3 +88,51 @@ async def test_html_document_upload_replace_and_preview(
         )
         assert replaced.status_code == 200, replaced.text
         assert (await client.get(preview_url)).content == new_html
+
+        second_html = b"<p>Reading notes</p>"
+        expanded = await client.put(
+            replacement_url,
+            files=[
+                ("document_files", ("notes.html", second_html, "text/html")),
+                ("document_files", ("reference.pdf", b"%PDF-1.4\n", "application/pdf")),
+            ],
+        )
+        assert expanded.status_code == 200, expanded.text
+        original, notes, reference = expanded.json()["content"]["documents"]
+        assert [item["name"] for item in (original, notes, reference)] == [
+            "Handout", "notes.html", "reference.pdf"
+        ]
+        assert expanded.json()["content"]["filename"] == original["filename"]
+        notes_query = {"document": notes["filename"]}
+        assert (await client.get(preview_url, params=notes_query)).content == second_html
+
+        other = await client.post(
+            "/activities/documentpdf",
+            data={"name": "Lab guides", "chapter_id": str(chapter.id)},
+            files=[
+                ("document_files", ("guide.pdf", b"%PDF-1.4\n", "application/pdf")),
+                ("document_files", ("guide.html", b"<p>Lab guide</p>", "text/html")),
+            ],
+        )
+        assert other.status_code == 200, other.text
+        other_documents = other.json()["content"]["documents"]
+        assert [item["name"] for item in other_documents] == ["guide.pdf", "guide.html"]
+        assert (await client.get(
+            preview_url, params={"document": other_documents[1]["filename"]}
+        )).status_code == 404
+
+        app.dependency_overrides[get_current_user] = AnonymousUser
+        assert (await client.get(preview_url, params=notes_query)).status_code == 404
+        app.dependency_overrides[get_current_user] = lambda: admin_user
+
+        rejected = await client.put(
+            replacement_url, data={"removed_documents": [original["filename"], notes["filename"], reference["filename"]]}
+        )
+        assert rejected.status_code == 422
+        removed = await client.put(
+            replacement_url, data={"removed_documents": [original["filename"], notes["filename"]]}
+        )
+        assert removed.status_code == 200, removed.text
+        assert removed.json()["content"]["documents"] == [reference]
+        assert removed.json()["content"]["filename"] == reference["filename"]
+        assert (await client.get(preview_url, params=notes_query)).status_code == 404

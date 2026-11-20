@@ -23,7 +23,40 @@ from src.services.utils.upload_content import read_content
 from fastapi import HTTPException, status, UploadFile, Request
 from uuid import uuid4
 from datetime import datetime
+from pathlib import PurePath
 from src.security.rbac import check_resource_access, AccessAction
+
+
+MAX_DOCUMENTS = 20
+
+
+def get_activity_documents(content: dict, name: str) -> list[dict[str, str]]:
+    documents = content.get("documents")
+    if isinstance(documents, list):
+        return documents
+    filename = content.get("filename")
+    return [{"filename": filename, "name": name}] if filename else []
+
+
+async def upload_document_items(
+    files: list[UploadFile], activity_uuid: str, org_uuid: str, course_uuid: str
+) -> list[dict[str, str]]:
+    documents = []
+    for file in files:
+        name = PurePath((file.filename or "").replace("\\", "/")).name
+        if not name:
+            raise HTTPException(status_code=422, detail="Document filename is required")
+        filename = await upload_document(file, activity_uuid, org_uuid, course_uuid)
+        documents.append({"filename": filename, "name": name})
+    return documents
+
+
+def check_document_count(count: int) -> None:
+    if not 1 <= count <= MAX_DOCUMENTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"An activity must contain 1 to {MAX_DOCUMENTS} documents",
+        )
 
 
 async def create_documentpdf_activity(
@@ -34,6 +67,7 @@ async def create_documentpdf_activity(
     db_session: AsyncSession,
     pdf_file: UploadFile | None = None,
     extra_metadata: Optional[dict] = None,
+    document_files: list[UploadFile] | None = None,
 ):
     # get chapter_id
     statement = select(Chapter).where(Chapter.id == chapter_id)
@@ -79,15 +113,19 @@ async def create_documentpdf_activity(
     # create activity uuid
     activity_uuid = f"activity_{uuid4()}"
 
-    if not pdf_file or not pdf_file.filename:
+    if pdf_file and document_files:
+        raise HTTPException(status_code=422, detail="Choose one document upload format")
+    files = document_files or ([pdf_file] if pdf_file and pdf_file.filename else [])
+    if not files:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="No document file provided"
         )
 
     if organization is None:
         raise HTTPException(status_code=404, detail="Organization not found")
-    saved_filename = await upload_document(
-        pdf_file, activity_uuid, organization.org_uuid, course.course_uuid
+    check_document_count(len(files))
+    documents = await upload_document_items(
+        files, activity_uuid, organization.org_uuid, course.course_uuid
     )
 
     # Create activity
@@ -96,7 +134,8 @@ async def create_documentpdf_activity(
         activity_type=ActivityTypeEnum.TYPE_DOCUMENT,
         activity_sub_type=ActivitySubTypeEnum.SUBTYPE_DOCUMENT_PDF,
         content={
-            "filename": saved_filename,
+            "filename": documents[0]["filename"],
+            **({"documents": documents} if document_files else {}),
             "activity_uuid": activity_uuid,
         },
         org_id=org_id if org_id else 0,
@@ -109,8 +148,7 @@ async def create_documentpdf_activity(
 
     # Insert Activity in DB
     db_session.add(activity)
-    await db_session.commit()
-    await db_session.refresh(activity)
+    await db_session.flush()
 
     # Find the last activity order in the chapter
     statement = (
@@ -136,7 +174,7 @@ async def create_documentpdf_activity(
     # Insert ChapterActivity link in DB
     db_session.add(activity_chapter)
     await db_session.commit()
-    await db_session.refresh(activity_chapter)
+    await db_session.refresh(activity)
 
     return ActivityRead.model_validate(activity)
 
@@ -148,8 +186,10 @@ async def update_documentpdf_activity(
     db_session: AsyncSession,
     name: Optional[str] = None,
     pdf_file: UploadFile | None = None,
+    document_files: list[UploadFile] | None = None,
+    removed_documents: list[str] | None = None,
 ) -> ActivityRead:
-    statement = select(Activity).where(Activity.activity_uuid == activity_uuid)
+    statement = select(Activity).where(Activity.activity_uuid == activity_uuid).with_for_update()
     activity = (await db_session.execute(statement)).scalars().first()
 
     if not activity or activity.activity_type != ActivityTypeEnum.TYPE_DOCUMENT:
@@ -165,18 +205,38 @@ async def update_documentpdf_activity(
         request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
     )
 
-    if name:
-        activity.name = name
-
-    if pdf_file and pdf_file.filename:
+    files = document_files or []
+    removals = set(removed_documents or [])
+    replacing = bool(pdf_file and pdf_file.filename)
+    if replacing and (files or removals):
+        raise HTTPException(status_code=422, detail="Choose one document upload format")
+    if replacing or files or removals:
+        content = activity.content or {}
+        documents = get_activity_documents(content, activity.name)
+        if not removals.issubset(document["filename"] for document in documents):
+            raise HTTPException(
+                status_code=409,
+                detail="The documents changed. Reopen the editor and try again.",
+            )
+        kept = [document for document in documents if document["filename"] not in removals]
+        if replacing and pdf_file:
+            files = [pdf_file]
+            kept = kept[1:]
+        check_document_count(len(kept) + len(files))
         statement = select(Organization).where(Organization.id == activity.org_id)
         organization = (await db_session.execute(statement)).scalars().first()
         if organization is None:
             raise HTTPException(status_code=404, detail="Organization not found")
-        saved_filename = await upload_document(
-            pdf_file, activity_uuid, organization.org_uuid, course.course_uuid
+        uploaded = await upload_document_items(
+            files, activity_uuid, organization.org_uuid, course.course_uuid
         )
-        activity.content = {**(activity.content or {}), "filename": saved_filename}
+        documents = uploaded + kept if replacing else kept + uploaded
+        activity.content = {**content, "filename": documents[0]["filename"]}
+        if "documents" in content or not replacing:
+            activity.content["documents"] = documents
+
+    if name:
+        activity.name = name
 
     activity.update_date = str(datetime.now())
     db_session.add(activity)
@@ -191,14 +251,17 @@ async def get_html_document(
     activity_uuid: str,
     current_user: PublicUser,
     db_session: AsyncSession,
+    document: str | None = None,
 ) -> bytes:
     activity = await get_activity(request, activity_uuid, current_user, db_session)
-    filename = activity.content.get("filename")
+    content = activity.content or {}
+    filename = document if document is not None else content.get("filename")
     if (
         activity.activity_type != ActivityTypeEnum.TYPE_DOCUMENT
         or activity.is_locked
         or not isinstance(filename, str)
         or not filename.endswith(HTML_DOCUMENT_SUFFIX)
+        or filename not in {item["filename"] for item in get_activity_documents(content, activity.name)}
     ):
         raise HTTPException(status_code=404, detail="HTML document not found")
 

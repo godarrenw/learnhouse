@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query/keys'
 import { revalidateTags } from '@services/utils/ts/requests'
 import { useTranslation } from 'react-i18next'
+import { getActivityDocuments, MAX_DOCUMENTS } from '@components/Objects/Activities/DocumentPdf/documents'
 
 const SUPPORTED_FILES = constructAcceptValue(['pdf', 'html'])
 
@@ -27,11 +28,16 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
   const access_token = session?.data?.tokens?.access_token
 
   const [name, setName] = useState(activity.name || '')
-  const [documentFile, setDocumentFile] = useState<File | null>(null)
+  const [documentFiles, setDocumentFiles] = useState<File[]>([])
+  const [removedDocuments, setRemovedDocuments] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const documents = getActivityDocuments(activity)
+  const documentCount = documents.length - removedDocuments.length + documentFiles.length
+  const invalidCount = documentCount < 1 || documentCount > MAX_DOCUMENTS
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (invalidCount) return
     setIsSubmitting(true)
 
     const toastId = toast.loading('Updating document activity...')
@@ -40,7 +46,8 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
         activity.activity_uuid,
         access_token,
         name !== activity.name ? name : undefined,
-        documentFile,
+        documentFiles,
+        removedDocuments,
       )
 
       if (res?.success === false) {
@@ -78,8 +85,11 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
 
       <div className="rounded-xl nice-shadow p-4 space-y-4">
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700">Activity name</label>
+          <label htmlFor="document-collection-name" className="text-sm font-medium text-gray-700">
+            {t('dashboard.courses.structure.activity.document_file.collection_name')}
+          </label>
           <input
+            id="document-collection-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             type="text"
@@ -89,27 +99,53 @@ function EditDocumentActivityModal({ activity, courseUuid, orgSlug, onClose }: E
           />
         </div>
 
+        {documents.length > 0 && (
+          <fieldset className="space-y-1.5">
+            <legend className="text-sm font-medium text-gray-700">
+              {t('dashboard.courses.structure.activity.document_file.keep')}
+            </legend>
+            <div className="max-h-40 space-y-1 overflow-y-auto">
+              {documents.map(({ filename, name }) => (
+                <label key={filename} className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={!removedDocuments.includes(filename)}
+                    onChange={(event) => {
+                      const keep = event.target.checked
+                      setRemovedDocuments((current) =>
+                        keep ? current.filter((item) => item !== filename) : [...current, filename]
+                      )
+                    }}
+                  />
+                  <span className="break-all">{name}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700">
-            {t('dashboard.courses.structure.activity.document_file.replace')}
+          <label htmlFor="document-collection-files" className="text-sm font-medium text-gray-700">
+            {t('dashboard.courses.structure.activity.document_file.add')}
           </label>
-          <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-            <FileText size={14} weight="duotone" />
-            <span>Leave empty to keep the current file</span>
-          </div>
           <input
+            id="document-collection-files"
             type="file"
+            multiple
             accept={SUPPORTED_FILES}
-            onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => setDocumentFiles(Array.from(event.target.files ?? []))}
             className="w-full text-sm text-gray-500 file:me-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 transition-colors"
           />
+          <p className={`text-xs ${invalidCount ? 'text-red-500' : 'text-gray-500'}`}>
+            {t('dashboard.courses.structure.activity.document_file.limit', { max: MAX_DOCUMENTS })}
+          </p>
         </div>
       </div>
 
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || invalidCount}
           className="inline-flex items-center justify-center h-9 px-5 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
         >
           {isSubmitting ? (

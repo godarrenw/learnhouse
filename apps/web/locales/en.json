@@ -2758,10 +2758,14 @@
         "activity": {
           "name_placeholder": "Activity name",
           "document_file": {
-            "label": "Document file (PDF or HTML)",
+            "label": "Select one or more documents (PDF or HTML)",
             "required": "Select a PDF or HTML file",
-            "replace": "Replace document (PDF or HTML)",
-            "edit_description": "Update the document name or replace the PDF or HTML file."
+            "collection_name": "Document collection name",
+            "keep": "Documents to keep (clear the checkbox to remove)",
+            "add": "Add documents (PDF or HTML)",
+            "select": "Choose a document to view",
+            "limit": "Each collection can contain 1 to {{max}} documents.",
+            "edit_description": "Rename the collection, or add and remove PDF and HTML documents."
           },
           "status": {
             "published": "Published",

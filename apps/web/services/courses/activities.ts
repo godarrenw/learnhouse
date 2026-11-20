@@ -84,7 +84,7 @@ export function createVideoActivityWithProgress(
 }
 
 export async function createFileActivity(
-  file: File,
+  file: File | File[],
   type: string,
   data: any,
   chapter_id: any,
@@ -97,6 +97,7 @@ export async function createFileActivity(
   let endpoint = ''
 
   if (type === 'video') {
+    if (Array.isArray(file)) throw new Error('Select a single video.')
     formData.append('name', data.name)
     formData.append('video_file', file)
     // Add video details
@@ -110,7 +111,9 @@ export async function createFileActivity(
     }
     endpoint = `${getAPIUrl()}activities/video`
   } else if (type === 'documentpdf') {
-    formData.append('pdf_file', file)
+    for (const documentFile of Array.isArray(file) ? file : [file]) {
+      formData.append('document_files', documentFile)
+    }
     formData.append('name', data.name)
     endpoint = `${getAPIUrl()}activities/documentpdf`
   } else {
@@ -399,11 +402,13 @@ export async function updateDocumentActivity(
   activityUuid: string,
   access_token: string,
   name?: string,
-  pdfFile?: File | null,
+  documentFiles: File[] = [],
+  removedDocuments: string[] = [],
 ) {
   const formData = new FormData()
   if (name) formData.append('name', name)
-  if (pdfFile) formData.append('pdf_file', pdfFile)
+  for (const file of documentFiles) formData.append('document_files', file)
+  for (const filename of removedDocuments) formData.append('removed_documents', filename)
   const result = await fetch(
     `${getAPIUrl()}activities/documentpdf/${activityUuid}`,
     RequestBodyFormWithAuthHeader('PUT', formData, null, access_token)
