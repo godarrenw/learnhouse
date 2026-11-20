@@ -2120,6 +2120,7 @@
             "keep": "保留的文档（取消勾选可移出合集）",
             "add": "添加文档（PDF 或 HTML，可多选）",
             "select": "选择要查看的文档",
+            "interactive_preview": "启用交互",
             "limit": "每个合集可包含 1 至 {{max}} 份文档。",
             "edit_description": "重命名合集，或添加、移出 PDF / HTML 文档。"
           },

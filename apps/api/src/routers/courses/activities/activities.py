@@ -1,5 +1,6 @@
 from typing import List, Optional
 import json
+from html import escape
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form, Request, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -625,15 +626,30 @@ async def api_get_html_document(
     request: Request,
     activity_uuid: str,
     document: str | None = None,
+    interactive: bool = False,
     current_user: PublicUser = Depends(get_current_user),
     db_session=Depends(get_db_session),
 ) -> HTMLResponse:
-    content = await get_html_document(request, activity_uuid, current_user, db_session, document)
+    content: bytes | str = await get_html_document(
+        request, activity_uuid, current_user, db_session, document
+    )
+    policy = "sandbox;"
+    if interactive:
+        policy = "sandbox allow-scripts; script-src 'unsafe-inline'; frame-src 'none';"
+        document_html = escape(content.decode("utf-8-sig"))
+        content = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<style>body{margin:0}iframe{display:block;width:100%;height:100vh;border:0}</style>'
+            '</head><body>'
+            '<iframe title="HTML document" sandbox="allow-scripts" referrerpolicy="no-referrer" '
+            f'srcdoc="{document_html}"></iframe></body></html>'
+        )
     return HTMLResponse(
         content=content,
         headers={
             "Content-Security-Policy": (
-                "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                f"{policy} default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
                 "font-src data:; base-uri 'none'; form-action 'none'"
             ),
             "Cache-Control": "private, no-store",

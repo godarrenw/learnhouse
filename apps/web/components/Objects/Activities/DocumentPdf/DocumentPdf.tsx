@@ -21,21 +21,31 @@ function DocumentActivity(props: DocumentActivityProps) {
   const { activity, className } = props
   const { t } = useTranslation()
   const [selectedFilename, setSelectedFilename] = useState('')
+  const [interactiveFilename, setInteractiveFilename] = useState('')
   const documents = getActivityDocuments(activity)
   const selected = documents.find(({ filename }) => filename === selectedFilename) || documents[0]
   if (!selected) return null
   const { filename, name } = selected
   const collection = documents.length > 1
   const previewClass = collection ? 'w-full h-full' : className
+  const interactive = interactiveFilename === filename
 
   const preview = filename.endsWith('_documenthtml.txt') ? (
-    <div className={previewClass ?? 'm-0 sm:m-8 sm:rounded-md mt-0 sm:mt-14 bg-white'}>
+    <div className={`flex flex-col ${previewClass ?? 'm-0 sm:m-8 sm:rounded-md mt-0 sm:mt-14 bg-white'}`}>
+      <button
+        type="button"
+        aria-pressed={interactive}
+        className="m-2 self-start rounded-md border border-gray-200 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+        onClick={() => setInteractiveFilename(interactive ? '' : filename)}
+      >
+        {t('dashboard.courses.structure.activity.document_file.interactive_preview')}
+      </button>
       <iframe
-        key={filename}
-        className={previewClass ? 'w-full h-full' : 'sm:rounded-lg w-full h-[85vh] sm:h-[900px]'}
-        src={`${getAPIUrl()}activities/${encodeURIComponent(activity.activity_uuid)}/document-html?document=${encodeURIComponent(filename)}`}
+        key={`${filename}:${interactive}`}
+        className={previewClass ? 'min-h-0 w-full flex-1' : 'sm:rounded-lg w-full h-[85vh] sm:h-[900px]'}
+        src={`${getAPIUrl()}activities/${encodeURIComponent(activity.activity_uuid)}/document-html?document=${encodeURIComponent(filename)}&interactive=${interactive}`}
         title={name}
-        sandbox=""
+        sandbox={interactive ? 'allow-scripts' : ''}
         referrerPolicy="no-referrer"
       />
     </div>
@@ -51,7 +61,10 @@ function DocumentActivity(props: DocumentActivityProps) {
           <select
             className="max-w-full rounded-md border border-gray-200 bg-white px-2 py-1"
             value={filename}
-            onChange={(event) => setSelectedFilename(event.target.value)}
+            onChange={(event) => {
+              setSelectedFilename(event.target.value)
+              setInteractiveFilename('')
+            }}
           >
             {documents.map((item) => (
               <option key={item.filename} value={item.filename}>{item.name}</option>

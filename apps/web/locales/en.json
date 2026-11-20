@@ -2764,6 +2764,7 @@
             "keep": "Documents to keep (clear the checkbox to remove)",
             "add": "Add documents (PDF or HTML)",
             "select": "Choose a document to view",
+            "interactive_preview": "Enable interaction",
             "limit": "Each collection can contain 1 to {{max}} documents.",
             "edit_description": "Rename the collection, or add and remove PDF and HTML documents."
           },

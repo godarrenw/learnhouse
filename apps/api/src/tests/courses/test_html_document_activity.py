@@ -1,3 +1,4 @@
+from html.parser import HTMLParser
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,6 +13,19 @@ from src.db.users import AnonymousUser
 from src.routers.courses.activities.activities import router as activities_router
 from src.routers.local_content import router as content_router
 from src.security.auth import get_current_user
+
+
+class PreviewMarkup(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.frames = []
+        self.scripts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "iframe":
+            self.frames.append(dict(attrs))
+        if tag == "script":
+            self.scripts.append(dict(attrs))
 
 
 @pytest.mark.asyncio
@@ -36,7 +50,10 @@ async def test_html_document_upload_replace_and_preview(
     app.dependency_overrides[get_db_session] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
-    html = "<!doctype html><h1>讲义</h1>".encode()
+    html = (
+        '<!doctype html><h1 title="讲义 &amp; 示例">讲义</h1>'
+        "<script>document.title = 'Interactive'</script>"
+    ).encode()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/activities/documentpdf",
@@ -53,8 +70,28 @@ async def test_html_document_upload_replace_and_preview(
         assert preview.status_code == 200, preview.text
         assert preview.content == html
         assert preview.headers["content-type"] == "text/html; charset=utf-8"
-        assert preview.headers["content-security-policy"].startswith("sandbox; default-src 'none';")
+        static_policy = preview.headers["content-security-policy"]
+        assert static_policy.startswith("sandbox; default-src 'none';")
+        assert "script-src" not in static_policy
         assert preview.headers["cache-control"] == "private, no-store"
+
+        interactive_params = {"interactive": "true"}
+        interactive = await client.get(preview_url, params=interactive_params)
+        assert interactive.status_code == 200, interactive.text
+        markup = PreviewMarkup()
+        markup.feed(interactive.text)
+        assert not markup.scripts
+        assert markup.frames == [{
+            "title": "HTML document",
+            "sandbox": "allow-scripts",
+            "referrerpolicy": "no-referrer",
+            "srcdoc": html.decode(),
+        }]
+        assert interactive.headers["content-security-policy"] == (
+            "sandbox allow-scripts; script-src 'unsafe-inline'; frame-src 'none'; "
+            + static_policy.removeprefix("sandbox; ")
+        )
+        assert interactive.headers["cache-control"] == "private, no-store"
 
         raw_url = (
             f"/content/orgs/{org.org_uuid}/courses/{course.course_uuid}/activities/"
@@ -67,6 +104,7 @@ async def test_html_document_upload_replace_and_preview(
         await db.commit()
         app.dependency_overrides[get_current_user] = AnonymousUser
         assert (await client.get(preview_url)).status_code == 404
+        assert (await client.get(preview_url, params=interactive_params)).status_code == 404
         app.dependency_overrides[get_current_user] = lambda: admin_user
 
         invalid = await client.put(
