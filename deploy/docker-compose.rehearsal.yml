@@ -11,7 +11,7 @@
 
 services:
   learnhouse-app:
-    image: ghcr.io/godarrenw/learnhouse:sysu-sam-2316d48
+    image: ghcr.io/godarrenw/learnhouse:sysu-sam-319575e
     platform: linux/amd64
     container_name: learnhouse-app-reh
 
